@@ -29,6 +29,10 @@
 #' @param nrow Numeric. Optional. Number of rows
 #' @param ncol Numeric. Optional. Number of columns
 #' 
+#' @templateVar url checking-convergence
+#' @templateVar ref NULL
+#' @template userguide_link
+#' 
 #' @examples 
 #' \dontrun{
 #' MSE <- runMSE()
@@ -90,6 +94,7 @@ Converge <- function(MSEobj, PMs=list(Yield, P10, AAVY), maxMP=15, thresh=0.5, r
     for (xx in 1:nPMs) {
       PMval <- PMs[[xx]](subMSE)
       PMName[xx] <- PMval@Name
+      PMval@Prob[!is.finite(PMval@Prob)] <- 0
       cum_mean <- apply(PMval@Prob, 2, cumsum)/apply(PMval@Prob, 2, seq_along) * 100
       vals <- as.vector(cum_mean) 
       mp <- rep(subMSE@MPs, each=subMSE@nsim)
@@ -137,7 +142,7 @@ Converge <- function(MSEobj, PMs=list(Yield, P10, AAVY), maxMP=15, thresh=0.5, r
 
     }
     
-    if (inc.leg) grid_arrange_shared_legend(plist, nrow=nrow, ncol=ncol, position="right")
+    if (inc.leg) join_plots(plist, nrow=nrow, ncol=ncol, position="right")
     if (!inc.leg) gridExtra::grid.arrange(grobs=plist, nrow=nrow, ncol=ncol) 
     
     st <- st + maxMP 
@@ -347,13 +352,27 @@ Chk <- function(X, MSEobj, thresh, ref.it) {
 # object by particular MPs (either MP number or name), or particular
 # simulations
 
-#' Check that MSE object includes all slots
+#' Utility functions for MSE objects
 #' 
-#' Check that an MSE object includes all slots in the latest version of DLMtool
-#' Use `updateMSE` to update the MSE object
-#' 
-#' @param MSEobj A MSE object.
+#' @param MSEobj A MSE object. For `updateMSE`, a MSE object from a previous version of 
+#' DLMtool. Also works with Stock, Fleet, Obs, Imp, and Data objects.
+#' @param MSEobjs A list of MSE objects. Must all have identical operating
+#' model and MPs. MPs which don't appear in all MSE objects will be dropped.
+#' @return An object of class \code{MSE}
+#' @examples 
+#' # An example of joinMSE
+#' \dontrun{
+#' OM1 <- DLMtool::testOM
+#' MSE1 <- runMSE(OM1) 
+#' OM2 <- OM1 
+#' OM2@seed <- OM1@seed + 1
+#' MSE2 <- runMSE(OM2)
+#' MSE <- joinMSE(list(MSE1, MSE2))
+#' MSE@nsim
+#' }
 #' @author A. Hordyk
+#' @describeIn checkMSE Check that an MSE object includes all slots in the latest version of DLMtool
+#' Use `updateMSE` to update the MSE object
 #' @export checkMSE
 checkMSE <- function(MSEobj) {
   nms <- slotNames(MSEobj)
@@ -386,6 +405,11 @@ checkMSE <- function(MSEobj) {
 #' @param years A numeric vector of projection years. Should start at 1 and
 #' increase by one to some value equal or less than the total number of
 #' projection years.
+#' 
+#' @templateVar url subsetting-the-mse-object
+#' @templateVar ref NULL
+#' @template userguide_link
+#' 
 #' @author A. Hordyk
 #' @examples
 #' \dontrun{
@@ -405,7 +429,14 @@ Sub <- function(MSEobj, MPs = NULL, sims = NULL, years = NULL) {
   if (Class == "integer" | Class == "numeric") subMPs <- MSEobj@MPs[as.integer(MPs)]
   if (Class == "character") subMPs <- MPs
   if (Class == "factor") subMPs <- as.character(MPs)
+  subMPs <- subMPs[!is.na(subMPs)]
+  
   SubMPs <- match(subMPs, MSEobj@MPs)  #  which(MSEobj@MPs %in% subMPs)
+  if (any(is.na(SubMPs))) {
+    missing <- subMPs[is.na(SubMPs)]
+    stop(paste0(missing, collapse=','), ' not found in MSE object', call.=FALSE)
+  }
+  
   not <- (subMPs %in% MSEobj@MPs)  # Check for MPs misspelled
   ind <- which(not == FALSE)
   newMPs <- MSEobj@MPs[SubMPs]
@@ -524,38 +555,71 @@ Sub <- function(MSEobj, MPs = NULL, sims = NULL, years = NULL) {
                     CB_hist = MSEobj@CB_hist[SubIts, , , , drop = FALSE], 
                     FM_hist = MSEobj@FM_hist[SubIts, , , , drop = FALSE], 
                     Effort = SubEffort, PAA=SubPAA, CAL=SubCAL, CAA=SubCAA , CALbins=CALbins,
-                    Misc=list())
+                    Misc=MSEobj@Misc)
   
   return(SubResults)
 }
 
-#' Join multiple MSE objects together
-#' 
-#' Joins two or more MSE objects together. MSE objects must have identical
-#' number of historical years, and projection years.
-#' 
-#' 
-#' @param MSEobjs A list of MSE objects. Must all have identical operating
-#' model and MPs. MPs which don't appear in all MSE objects will be dropped.
-#' @return An object of class \code{MSE}
-#' @author A. Hordyk
-#' @export joinMSE
-#' @examples 
-#' \dontrun{
-#' OM1 <- DLMtool::testOM
-#' MSE1 <- runMSE(OM1) 
-#' OM2 <- OM1 
-#' OM2@seed <- OM1@seed + 1
-#' MSE2 <- runMSE(OM2)
-#' MSE <- joinMSE(list(MSE1, MSE2))
-#' MSE@nsim
-#' }
+#' @describeIn checkMSE Joins two or more MSE objects together. MSE objects must have identical
+#' number of historical years, and projection years. Also works for Hist objects returned
+#' by `runMSE(Hist=TRUE)`
+#' @export
 joinMSE <- function(MSEobjs = NULL) {
   # join two or more MSE objects
   if (class(MSEobjs) != "list") stop("MSEobjs must be a list")
   if (length(MSEobjs) < 2) stop("MSEobjs list doesn't contain multiple MSE objects")
   
   lapply(MSEobjs, checkMSE) # check that MSE objects contains all slots 
+  
+  ishist <- all(lapply(MSEobjs, slotNames) %>% unlist() %>% unique() %in% slotNames('Hist'))
+  
+  if (ishist) {
+    out <- new("Hist")
+    sls <- slotNames('Hist')
+    nsim <- MSEobjs[[1]]@Ref$B0 %>% length()
+    for (sl in sls) {
+      obj <-lapply(MSEobjs, slot, name=sl)
+      if (sl == "Data") {
+        out@Data <- joinData(obj)
+      } else {
+        if (class(obj[[1]]) == "data.frame") {
+          slot(out, sl) <- do.call('rbind', obj)
+        }
+        if (class(obj[[1]]) == "list") {
+          out.list <- list()
+          for (nm in names(obj[[1]])) {
+            obj2 <- lapply(obj, '[[', nm)
+            ind <- which(dim(obj2[[1]]) == nsim)
+            if (length(ind)>1) ind <- ind[1]
+            if (length(ind) >0) {
+              if (class(obj2[[1]]) == "array") {
+                tempVal <- lapply(obj2, dim)
+                # check all dimensions the same (hack for different CAL bins)
+                tdf <- lapply(obj2, dim) %>% unlist() %>% 
+                  matrix(nrow=length(obj2), ncol=length(dim(obj2[[1]])),byrow=TRUE)
+                nBins <- tdf[,2]
+                Max <- max(nBins)
+                nyrs <- max(tdf[,3])
+                nsims <- sapply(tempVal, function(x) x[1])
+                if (!mean(nBins) == max(nBins)) { # not all same size
+                  index <- which(nBins < Max)
+                  for (kk in index) {
+                    dif <- Max - dim(obj2[[kk]])[2]
+                    obj2[[kk]] <- abind::abind(obj2[[kk]], array(0, dim=c(nsims[kk], dif, nyrs)), along=2)
+                  }
+                }
+              }
+              out.list[[nm]] <- abind::abind(obj2, along=ind)  
+            } else {
+              out.list[[nm]] <- unlist(obj2) #  %>% unique()
+            }
+          }
+          slot(out, sl) <- out.list
+        }
+      }
+    }
+    return(out)
+  }  
   
   MPNames <- lapply(MSEobjs, getElement, name = "MPs")  # MPs in each object 
   allsame <- length(unique(lapply(MPNames, unique))) == 1
@@ -567,6 +631,7 @@ joinMSE <- function(MSEobjs = NULL) {
     tab <- table(mpnames)
     ind <- tab == npack
     commonMPs <- names(tab)[ind]
+    if (length(commonMPs)<1) stop("No common MPs in MSE objects", call.=FALSE)
     MSEobjs <- lapply(MSEobjs, Sub, MPs = commonMPs)
     message("MPs not in all MSE objects:")
     message(paste(names(tab)[!ind], ""))
@@ -650,6 +715,84 @@ joinMSE <- function(MSEobjs = NULL) {
   
   names(outlist) <- sns
   
+  Misc<-list()
+  if (length(MSEobjs[[1]]@Misc)>0) {
+    if (!is.null(MSEobjs[[1]]@Misc$Data)) {
+      Misc$Data <- list()
+      # Posterior predicted data joining
+      for(i in 1:length(MSEobjs[[1]]@Misc$Data)) Misc$Data[[i]]<-joinData(lapply(MSEobjs,function(x)slot(x,"Misc")$Data[[i]]))
+    }
+    
+    if (!is.null(MSEobjs[[1]]@Misc$RInd.stats)) {
+      # Error from real indices
+      nms <- unique(MSEobjs[[1]]@Misc$RInd.stats$Index) %>% as.character()
+      temp <- list()
+      for (nm in seq_along(nms)) {
+        temp1 <- list()
+        for(i in 1:length(MSEobjs)) {
+          temp1[[i]] <- MSEobjs[[i]]@Misc$RInd.stats %>% dplyr::filter(Index==nms[nm])
+        }
+        temp[[nm]] <- do.call('rbind', temp1)
+      }
+      Misc$RInd.stats <- do.call('rbind', temp)
+    }
+    
+    if (!is.null(MSEobjs[[1]]@Misc$TryMP)) {
+      temp1 <- list()
+      for(i in 1:length(MSEobjs)) {
+        temp1[[i]] <- MSEobjs[[i]]@Misc$TryMP 
+      }
+      Misc$TryMP <- do.call('rbind', temp1)   
+    }
+    
+    if (!is.null(MSEobjs[[1]]@Misc$Unfished)) {
+      Misc$Unfished <- list()
+      temp1 <- temp2 <- list()
+      for(i in 1:length(MSEobjs)) {
+        temp1[[i]] <- MSEobjs[[i]]@Misc$Unfished$Refs 
+        temp2[[i]] <- MSEobjs[[i]]@Misc$Unfished$ByYear 
+      }
+      Misc$Unfished$Refs <- do.call('cbind', temp1)
+      for (nm in names(temp2[[1]])) {
+        tt = lapply(temp2, "[[", nm)
+        tt <- do.call('rbind',tt)
+        Misc$Unfished$ByYear[[nm]] <- tt
+      }
+    }
+    if (!is.null(MSEobjs[[1]]@Misc$MSYRefs)) {
+      Misc$MSYRefs <- list()
+      temp1 <- temp2 <- list()
+      for(i in 1:length(MSEobjs)) {
+        temp1[[i]] <- MSEobjs[[i]]@Misc$MSYRefs$Refs 
+        temp2[[i]] <- MSEobjs[[i]]@Misc$MSYRefs$ByYear 
+      }
+      Misc$MSYRefs$Refs <- do.call('rbind', temp1)
+      for (nm in names(temp2[[1]])) {
+        tt = lapply(temp2, "[[", nm)
+        tt <- do.call('rbind',tt)
+        Misc$MSYRefs$ByYear[[nm]] <- tt
+      }
+    }
+    temp <- list()
+    nsim <- ncol(Misc$Unfished$Ref)
+    dims <- dim(MSEobjs[[1]]@Misc$LatEffort)
+    Misc$LatEffort <- array(NA, dim=c(nsim, dims[2], dims[3]))
+    Misc$Revenue <- array(NA, dim=c(nsim, dims[2], dims[3]))
+    Misc$Cost <- array(NA, dim=c(nsim, dims[2], dims[3]))
+    Misc$TAE <- array(NA, dim=c(nsim, dims[2], dims[3]))
+    st <- 1
+    for (i in 1:length(MSEobjs)) {
+      dims <- dim(MSEobjs[[i]]@Misc$LatEffort)
+      indvec <- st:(st+dims[1]-1)
+      st <- indvec[length(indvec)] + 1
+      Misc$LatEffort[indvec,,] <- MSEobjs[[i]]@Misc$LatEffort
+      Misc$Cost[indvec,,] <- MSEobjs[[i]]@Misc$Cost
+      Misc$Revenue[indvec,,] <- MSEobjs[[i]]@Misc$Revenue
+      Misc$TAE[indvec,,] <- MSEobjs[[i]]@Misc$TAE
+    }
+  
+  }
+  
   newMSE <- new("MSE", Name = outlist$Name, nyears = unique(outlist$nyears), 
                 proyears = unique(outlist$proyears), nMP = unique(outlist$nMP), 
                 MPs = unique(outlist$MPs), nsim = sum(outlist$nsim), OM = outlist$OM, 
@@ -657,7 +800,7 @@ joinMSE <- function(MSEobjs = NULL) {
                 outlist$B, outlist$SSB, outlist$VB,
                 outlist$FM, outlist$C, outlist$TAC, outlist$SSB_hist, 
                 outlist$CB_hist, outlist$FM_hist, outlist$Effort, outlist$PAA,
-                outlist$CAA, outlist$CAL, CALbins, Misc=list())
+                outlist$CAA, outlist$CAL, CALbins, Misc=Misc)
   
   newMSE
 }
@@ -667,81 +810,193 @@ joinMSE <- function(MSEobjs = NULL) {
 # how consistently an MP outperforms another.
 
 
-#' How dominant is an MP?
+# #' How dominant is an MP?
+# #' 
+# #' The DOM function examines how consistently an MP outperforms another. For
+# #' example DCAC might provide higher yield than AvC on average but outperforms
+# #' AvC in less than half of simulations.
+# #' 
+# #' 
+# #' @param MSEobj An object of class 'MSE'
+# #' @param MPtg A character vector of management procedures for cross
+# #' examination
+# #' @return A matrix of performance comparisons length(MPtg) rows by MSE@nMPs
+# #' columns
+# #' @author A. Hordyk
+# #' @export DOM
+# DOM <- function(MSEobj, MPtg = NA) {
+#   if (any(is.na(MPtg))) 
+#     MPtg <- MSEobj@MPs
+#   proyears <- MSEobj@proyears
+#   nMP <- MSEobj@nMPs
+#   nsim <- MSEobj@nsim
+#   ind <- which(MSEobj@MPs %in% MPtg)
+#   MPr <- which(!(MSEobj@MPs %in% MPtg))
+#   yind <- max(MSEobj@proyears - 4, 1):MSEobj@proyears
+#   y1 <- 1:(MSEobj@proyears - 1)
+#   y2 <- 2:MSEobj@proyears
+#   Mat <- matrix(0, nrow = length(MPtg), ncol = nMP)
+#   rownames(Mat) <- MPtg
+#   colnames(Mat) <- MSEobj@MPs
+#   POF <- P100 <- YieldMat <- IAVmat <- Mat
+#   for (X in 1:length(MPtg)) {
+#     # Overfishing (F > FMSY)
+#     ind1 <- as.matrix(expand.grid(1:nsim, ind[X], 1:proyears))
+#     ind2 <- as.matrix(expand.grid(1:nsim, 1:nMP, 1:proyears))
+#     t1 <- apply(array(MSEobj@F_FMSY[ind1] > 1, dim = c(nsim, 1, proyears)), 
+#                 c(1, 2), sum, na.rm = TRUE)
+#     t2 <- apply(array(MSEobj@F_FMSY[ind2] > 1, dim = c(nsim, nMP, proyears)), 
+#                 c(1, 2), sum, na.rm = TRUE)
+#     POF[X, ] <- round(apply(matrix(rep(t1, nMP), nrow = nsim) < t2, 
+#                             2, sum)/nsim * 100, 0)
+#     # B < BMSY
+#     t1 <- apply(array(MSEobj@B_BMSY[ind1] < 1, dim = c(nsim, 1, proyears)), 
+#                 c(1, 2), sum, na.rm = TRUE)
+#     t2 <- apply(array(MSEobj@B_BMSY[ind2] < 1, dim = c(nsim, nMP, proyears)), 
+#                 c(1, 2), sum, na.rm = TRUE)
+#     P100[X, ] <- round(apply(matrix(rep(t1, nMP), nrow = nsim) < t2, 
+#                              2, sum, na.rm = TRUE)/nsim * 100, 0)
+#     # Relative yield in last 5 years
+#     ind1 <- as.matrix(expand.grid(1:nsim, ind[X], yind))
+#     ind2 <- as.matrix(expand.grid(1:nsim, 1:nMP, yind))
+#     t1 <- apply(array(MSEobj@C[ind1], dim = c(nsim, 1, length(yind))), 
+#                 c(1, 2), sum, na.rm = TRUE)
+#     t2 <- apply(array(MSEobj@C[ind2], dim = c(nsim, nMP, length(yind))), 
+#                 c(1, 2), sum, na.rm = TRUE)
+#     YieldMat[X, ] <- round(apply(matrix(rep(t1, nMP), nrow = nsim) > 
+#                                    t2, 2, sum, na.rm = TRUE)/nsim * 100, 0)
+#     # interannual variation in catch
+#     ind1 <- as.matrix(expand.grid(1:nsim, ind[X], y1))
+#     ind2 <- as.matrix(expand.grid(1:nsim, ind[X], y2))
+#     AAVY1 <- apply(array(((MSEobj@C[ind1] - MSEobj@C[ind2])^2)^0.5, 
+#                          dim = c(nsim, 1, length(y1))), 1, mean, na.rm = T)/apply(array(MSEobj@C[ind2], 
+#                                                                                         dim = c(nsim, 1, length(y1))), 1, mean, na.rm = T)
+#     ind1 <- as.matrix(expand.grid(1:nsim, 1:nMP, y1))
+#     ind2 <- as.matrix(expand.grid(1:nsim, 1:nMP, y2))
+#     AAVY2 <- apply(array(((MSEobj@C[ind1] - MSEobj@C[ind2])^2)^0.5, 
+#                          dim = c(nsim, nMP, length(y1))), c(1, 2), mean, na.rm = T)/apply(array(MSEobj@C[ind2], 
+#                                                                                                 dim = c(nsim, nMP, length(y1))), c(1, 2), mean, na.rm = T)
+#     IAVmat[X, ] <- round(apply(matrix(rep(AAVY1, nMP), nrow = nsim) < 
+#                                  AAVY2, 2, sum, na.rm = TRUE)/nsim * 100, 0)
+#   }
+#   out <- list()
+#   out$POF <- POF
+#   out$P100 <- P100
+#   out$Yd <- YieldMat
+#   out$AAVY <- IAVmat
+#   return(out)
+# }
+# 
+
+#' Determine dominate MPs
 #' 
-#' The DOM function examines how consistently an MP outperforms another. For
-#' example DCAC might provide higher yield than AvC on average but outperforms
-#' AvC in less than half of simulations.
+#' MPs that perform worse than comparable MPs across all performance metrics are considered 'dominated' as 
+#' other options are always preferable. 
 #' 
+#' The `Dom` function compares the probabilities calculated in the performance metric
+#' (`PM`) functions and determines the MPs that have a lower probability across all PMs compared 
+#' to other MPs of the same management type (e.g., size limit, TAC, etc). 
+#' Consequently, it is important that all `PM` functions are constructed so that higher probabilities = better performance 
+#' (e.g, `PNOF` is the probability of NOT overfishing)
+#'
+#' @param MSEobj An object of class `MSE`
+#' @param ...  Names of Performance Metrics (PMs), or other arguments to `TradePlot`. 
+#' First PM is recycled if number of PMs is not even
+#' @param PMlist Optional list of PM names. Overrides any supplied in ... above 
+#' @param Refs An optional named list (matching the PM names) with numeric values to override the default `Ref` values. 
+#' @param Yrs An optional named list (matching the PM names) with numeric values to override the default `Yrs` values. 
 #' 
-#' @param MSEobj An object of class 'MSE'
-#' @param MPtg A character vector of management procedures for cross
-#' examination
-#' @return A matrix of performance comparisons length(MPtg) rows by MSE@nMPs
-#' columns
+#' @return A named list of length 2 with a character vector of non-dominated MPs in `MPs` and 
+#' a data.frame of dominated MPs and the names of the relevant dominated MPs in `DomMPs` 
+#' @export
 #' @author A. Hordyk
-#' @export DOM
-DOM <- function(MSEobj, MPtg = NA) {
-  if (any(is.na(MPtg))) 
-    MPtg <- MSEobj@MPs
-  proyears <- MSEobj@proyears
-  nMP <- MSEobj@nMPs
-  nsim <- MSEobj@nsim
-  ind <- which(MSEobj@MPs %in% MPtg)
-  MPr <- which(!(MSEobj@MPs %in% MPtg))
-  yind <- max(MSEobj@proyears - 4, 1):MSEobj@proyears
-  y1 <- 1:(MSEobj@proyears - 1)
-  y2 <- 2:MSEobj@proyears
-  Mat <- matrix(0, nrow = length(MPtg), ncol = nMP)
-  rownames(Mat) <- MPtg
-  colnames(Mat) <- MSEobj@MPs
-  POF <- P100 <- YieldMat <- IAVmat <- Mat
-  for (X in 1:length(MPtg)) {
-    # Overfishing (F > FMSY)
-    ind1 <- as.matrix(expand.grid(1:nsim, ind[X], 1:proyears))
-    ind2 <- as.matrix(expand.grid(1:nsim, 1:nMP, 1:proyears))
-    t1 <- apply(array(MSEobj@F_FMSY[ind1] > 1, dim = c(nsim, 1, proyears)), 
-                c(1, 2), sum, na.rm = TRUE)
-    t2 <- apply(array(MSEobj@F_FMSY[ind2] > 1, dim = c(nsim, nMP, proyears)), 
-                c(1, 2), sum, na.rm = TRUE)
-    POF[X, ] <- round(apply(matrix(rep(t1, nMP), nrow = nsim) < t2, 
-                            2, sum)/nsim * 100, 0)
-    # B < BMSY
-    t1 <- apply(array(MSEobj@B_BMSY[ind1] < 1, dim = c(nsim, 1, proyears)), 
-                c(1, 2), sum, na.rm = TRUE)
-    t2 <- apply(array(MSEobj@B_BMSY[ind2] < 1, dim = c(nsim, nMP, proyears)), 
-                c(1, 2), sum, na.rm = TRUE)
-    P100[X, ] <- round(apply(matrix(rep(t1, nMP), nrow = nsim) < t2, 
-                             2, sum, na.rm = TRUE)/nsim * 100, 0)
-    # Relative yield in last 5 years
-    ind1 <- as.matrix(expand.grid(1:nsim, ind[X], yind))
-    ind2 <- as.matrix(expand.grid(1:nsim, 1:nMP, yind))
-    t1 <- apply(array(MSEobj@C[ind1], dim = c(nsim, 1, length(yind))), 
-                c(1, 2), sum, na.rm = TRUE)
-    t2 <- apply(array(MSEobj@C[ind2], dim = c(nsim, nMP, length(yind))), 
-                c(1, 2), sum, na.rm = TRUE)
-    YieldMat[X, ] <- round(apply(matrix(rep(t1, nMP), nrow = nsim) > 
-                                   t2, 2, sum, na.rm = TRUE)/nsim * 100, 0)
-    # interannual variation in catch
-    ind1 <- as.matrix(expand.grid(1:nsim, ind[X], y1))
-    ind2 <- as.matrix(expand.grid(1:nsim, ind[X], y2))
-    AAVY1 <- apply(array(((MSEobj@C[ind1] - MSEobj@C[ind2])^2)^0.5, 
-                         dim = c(nsim, 1, length(y1))), 1, mean, na.rm = T)/apply(array(MSEobj@C[ind2], 
-                                                                                        dim = c(nsim, 1, length(y1))), 1, mean, na.rm = T)
-    ind1 <- as.matrix(expand.grid(1:nsim, 1:nMP, y1))
-    ind2 <- as.matrix(expand.grid(1:nsim, 1:nMP, y2))
-    AAVY2 <- apply(array(((MSEobj@C[ind1] - MSEobj@C[ind2])^2)^0.5, 
-                         dim = c(nsim, nMP, length(y1))), c(1, 2), mean, na.rm = T)/apply(array(MSEobj@C[ind2], 
-                                                                                                dim = c(nsim, nMP, length(y1))), c(1, 2), mean, na.rm = T)
-    IAVmat[X, ] <- round(apply(matrix(rep(AAVY1, nMP), nrow = nsim) < 
-                                 AAVY2, 2, sum, na.rm = TRUE)/nsim * 100, 0)
+#' @examples
+#' \dontrun{
+#' MSE <- runMSE(MPs=NA) # run all MPs
+#' Nondom <- Dom(MSE, "P10", "LTY", "PNOF")
+#' # Non-dominated MPs
+#' Nondom$MPs 
+#' 
+#' # Dominated MPs 
+#' Nondom$DomMPs
+#' 
+#' }
+#' 
+Dom <- function(MSEobj, ..., PMlist=NULL, Refs=NULL, Yrs=NULL) {
+  if (class(MSEobj) != 'MSE') stop("Object must be class `MSE`", call.=FALSE)
+  if (is.null(PMlist)) {
+    PMlist <- unlist(list(...))
+  } else {
+    PMlist <- unlist(PMlist)
   }
-  out <- list()
-  out$POF <- POF
-  out$P100 <- P100
-  out$Yd <- YieldMat
-  out$AAVY <- IAVmat
-  return(out)
+  
+  if (class(PMlist) != 'character') stop("Must provide names of PM methods")
+  
+  runPM <- vector("list", length(PMlist))
+  for (X in 1:length(PMlist)) {
+    ref <- Refs[[PMlist[X]]]
+    yrs <- Yrs[[PMlist[X]]]
+    if (is.null(ref)) {
+      if (is.null(yrs)) {
+        runPM[[X]] <- eval(call(PMlist[X], MSEobj))
+      } else {
+        runPM[[X]] <- eval(call(PMlist[X], MSEobj, Yrs=yrs))
+      }
+    } else {
+      if (is.null(yrs)) {
+        runPM[[X]] <- eval(call(PMlist[X], MSEobj, Ref=ref))
+      } else {
+        runPM[[X]] <- eval(call(PMlist[X], MSEobj, Ref=ref, Yrs=yrs))
+      }
+    }
+  }
+  
+  # Create Table
+  DF <- Required(MSEobj@MPs, TRUE) %>% data.frame(., stringsAsFactors = FALSE)
+  DF <- dplyr::left_join(DF, MPtype(MSEobj@MPs), by="MP")
+  
+  DF3 <- lapply(runPM, slot, name='Mean') %>% do.call("cbind", .)
+  colnames(DF3) <- PMlist
+  DF3 <- data.frame(MP=runPM[[1]]@MPs, DF3, stringsAsFactors = FALSE)
+  DF <- dplyr::left_join(DF, DF3, by="MP")
+  
+  DomList <- list()
+  for (i in 1:MSEobj@nMPs) {
+    # ind <- which(DF$DataClass == DF$DataClass[i] & DF$Rec == DF$Rec[i] & DF$Type ==DF$Type[i])
+    ind <- which(DF$Rec == DF$Rec[i] & DF$Type ==DF$Type[i]) # group MPs by Rec Type
+    ind <- ind[!ind==i]
+    if (length(ind)>0) {
+      df1 <- DF[i,] %>% 
+        dplyr::select(-MP, -Data, -DataClass, -Type, -Recs) %>% unlist()
+      m1 <- matrix(df1, nrow=length(ind), ncol=length(df1), byrow=TRUE) %>% 
+        round(2)
+      df2 <- DF[ind,] %>% 
+        dplyr::select(-MP, -Data, -DataClass, -Type, -Recs) %>% as.matrix() %>% 
+        round(2)
+      ind2 <- which(rowSums(m1 < df2) ==0) 
+      if (length(ind2)>0) {
+        DomList[[i]] <- data.frame(DominatedMPs=DF$MP[ind[ind2]], 
+                                   By=MSEobj@MPs[i], stringsAsFactors = FALSE)
+      } 
+    } 
+  }
+  DomDF <- do.call("rbind", DomList) %>% as.data.frame()
+  DomMPs <- unique(DomDF$DominatedMPs)
+  NonDom <- MSEobj@MPs[!MSEobj@MPs %in% DomMPs]
+  DomList <- list()
+  for (i in seq_along(DomMPs)) {
+    By <- DomDF %>% dplyr::filter(DominatedMPs ==DomMPs[i]) %>% dplyr::select(By) %>% unique() %>%
+      unlist(., use.names = FALSE)
+    By <- By[By %in% NonDom]
+    By <- By %>% paste(., collapse=", ") %>% sort()
+    if (nchar(By)>0)
+      DomList[[i]] <- data.frame(MP=DomMPs[i], By=By, stringsAsFactors = FALSE)
+  }
+  
+  DomDF <- do.call("rbind", DomList) %>% as.data.frame() %>% dplyr::arrange(MP)
+  NonDom %>% sort()
+  
+  list(MPs=NonDom, DomMPs=DomDF)
 }
 
 

@@ -4,9 +4,10 @@
 \alias{OMdoc}
 \title{Generate OM Documentation Report}
 \usage{
-OMdoc(OM = NULL, rmd.source = NULL, overwrite = FALSE, out.file = NULL,
-  inc.plot = TRUE, render = TRUE, output = "html_document",
-  openFile = TRUE, quiet = FALSE, dir = NULL, ...)
+OMdoc(OM = NULL, rmd.source = NULL, overwrite = FALSE,
+  out.file = NULL, inc.plot = TRUE, render = TRUE,
+  output = "html_document", openFile = TRUE, quiet = FALSE,
+  dir = NULL, ...)
 }
 \arguments{
 \item{OM}{An object of class 'OM' or the name of an OM xlsx file}
@@ -39,6 +40,9 @@ Creates a Rmarkdown file and compiles a HTML report file in the working director
 }
 \description{
 Generate OM Documentation Report
+}
+\note{
+See relevant section of the \href{https://dlmtool.github.io/DLMtool/userguide/creating-a-new-operating-model.html#populate-and-document-om}{DLMtool User Guide} for more information.
 }
 \examples{
 \dontrun{

@@ -4,9 +4,9 @@
 \alias{getq3}
 \title{optimize for catchability (q)}
 \usage{
-getq3(x, D, SSB0, nareas, maxage, N, pyears, M_ageArray, Mat_age, Asize, Wt_age,
-  V, retA, Perr, mov, SRrel, Find, Spat_targ, hs, R0a, SSBpR, aR, bR,
-  bounds = c(1e-05, 15), maxF, MPA, useCPP = TRUE)
+getq3(x, D, SSB0, nareas, maxage, N, pyears, M_ageArray, Mat_age, Asize,
+  Wt_age, V, retA, Perr, mov, SRrel, Find, Spat_targ, hs, R0a, SSBpR, aR,
+  bR, bounds = c(1e-05, 15), maxF, MPA, plusgroup)
 }
 \arguments{
 \item{x}{Integer, the simulation number}
@@ -38,7 +38,7 @@ Only values from the first year (i.e \code{N[,,1,]}) are used, which is the curr
 
 \item{Perr}{A matrix (dimensions nsim, nyears+proyears) with the recruitment deviations}
 
-\item{mov}{An array (dimensions nsim, nareas, nareas) with the movement matrix}
+\item{mov}{An array (dimensions nsim, nareas, nareas, nyears+proyears) with the movement matrix}
 
 \item{SRrel}{A numeric vector nsim long specifying the recruitment curve to use}
 
@@ -62,7 +62,7 @@ Only values from the first year (i.e \code{N[,,1,]}) are used, which is the curr
 
 \item{MPA}{A matrix of spatial closures by year}
 
-\item{useCPP}{logical - use the CPP code? For testing purposes only}
+\item{plusgroup}{Integer. Default = 0 = no plus-group. Use 1 to include a plus-group}
 }
 \description{
 Function optimizes catchability (q, where F=qE) required to get to user-specified stock
@@ -71,3 +71,4 @@ depletion
 \author{
 A. Hordyk
 }
+\keyword{internal}

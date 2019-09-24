@@ -1,14 +1,373 @@
 
+render_plot <- function(Object, Class, Stock=NULL, RMD=NULL, nsamp=3, nsim=200, nyears=50, 
+                        proyears=28, output_file=NULL, output_dir=getwd(), 
+                        quiet=TRUE, tabs=TRUE, title=NULL, date=NULL,
+                        plotPars =NULL, open=TRUE, dev=FALSE, parallel=TRUE) {
+  
+  SampCpars <- list() # empty list
+  
+  if (is.null(plotPars)) plotPars <- list(breaks=10, col="darkgray", axes=FALSE, 
+                                          cex.main=1, lwd=2)
+ 
+  if (class(Object) == "OM") {
+    nsim <- Object@nsim 
+    nyears <- Object@nyears
+    proyears <- Object@proyears
+    SampCpars <- if(length(Object@cpars)>0) SampCpars <- SampleCpars(Object@cpars, nsim, msg=FALSE)
+    set.seed(Object@seed)
+    Stock <- SubOM(Object, "Stock")
+    # Class <- "OM"
+  }
+  
+ 
+  if (Class == "Stock") {
+    if (is.null(title)) title <- "Stock Object Plots"
+    Pars <- SampleStockPars(Object, nsim, nyears, proyears, SampCpars, 
+                            msg=FALSE)
+    Pars$Name <- gsub(" ", "_", Object@Name)  
+  } else if (Class == "Fleet") {
+    if (is.null(title)) title <- "Fleet Object Plots"
+    if (class(Stock)!="Stock") 
+      stop("Must provide object of class 'Stock'", call. = FALSE)
+    StockPars <- SampleStockPars(Stock, nsim, nyears, proyears, SampCpars, 
+                                 msg=FALSE)
+    FleetPars <- SampleFleetPars(Object, StockPars, nsim, nyears, proyears,
+                                 SampCpars, msg=FALSE)
+  
+    Pars <- c(StockPars, FleetPars)
+    Pars$Name <- gsub(" ", "_", Object@Name)
+    Pars$CurrentYr <- Object@CurrentYr
+    Pars$MPA <- Object@MPA
+    
+  } else if (Class == "Obs") {
+    if (is.null(title)) title <- "Obs Object Plots"
+    ObsPars <- SampleObsPars(Object, nsim, cpars=SampCpars)
+    BMSY_B0bias <- array(rlnorm(nsim, 
+                                mconv(1, Object@BMSY_B0biascv), sdconv(1, Object@BMSY_B0biascv)), 
+                         dim = c(nsim))  # trial samples of BMSY relative to unfished  
 
+    ObsPars$BMSY_B0bias <- BMSY_B0bias
+    
+    Pars <- c(ObsPars)
+    
+  } else if (Class == "Imp") {
+    if (is.null(title)) title <- "Imp Object Plots"
+    ImpPars <- SampleImpPars(Object, nsim, cpars=SampCpars)
+    Pars <- c(ImpPars)
+  } else if (Class == "OM") {
+    if (is.null(title)) title <- "OM Object Plots"
+    message("Sampling Stock, Fleet, Obs, and Imp parameters")
+    StockPars <- SampleStockPars(SubOM(Object, "Stock"), nsim, nyears, proyears, SampCpars, msg=FALSE)
+    FleetPars <- SampleFleetPars(SubOM(Object, "Fleet"), StockPars, nsim, nyears, proyears, SampCpars, msg=FALSE)
+    ObsPars <- SampleObsPars(Object, nsim, cpars=SampCpars)
+    BMSY_B0bias <- array(rlnorm(nsim, 
+                                mconv(1, Object@BMSY_B0biascv), sdconv(1, Object@BMSY_B0biascv)), 
+                         dim = c(nsim))  # trial samples of BMSY relative to unfished  
+    
+    ObsPars$BMSY_B0bias <- BMSY_B0bias
+    ImpPars <- SampleImpPars(SubOM(Object, "Imp"), nsim, cpars=SampCpars)
+
+    Pars <- c(StockPars, FleetPars, ObsPars, ImpPars)
+    Pars$CurrentYr <- Object@CurrentYr
+    
+    if (!parallel) dopar <- FALSE
+    if (nsim>=48 & parallel) dopar <- TRUE
+    if (nsim<48& parallel) dopar <- FALSE
+    message("Running Historical Simulations")
+    Hist <- runMSE(Object, Hist=TRUE, silent=TRUE, parallel = dopar)
+    Pars$Hist <- Hist
+    Pars$Name <- "OM"
+    Pars$MPA <- Object@MPA
+    Pars$CurrentYr <- Object@CurrentYr
+  } else if (Class == "Hist") {
+    Pars <- list()
+    Pars$Hist <- Object
+    Pars$CurrentYr <- Object@Misc$CurrentYr
+    nyears <- length(Object@Data@Year)
+    if (is.null(title)) title <- "Historical Simulations"
+
+  } else {
+    stop("Object must be class 'Stock', 'Fleet', 'Obs', or 'Imp'", call.=FALSE)  
+  }
+  
+
+  if (Class !="Hist" & Class !="OM") {
+    Pars$Name <- gsub(" ", "_", Object@Name)  
+  } 
+  its <- sample(1:nsim, nsamp)
+  # Pars <<- Pars
+  Params <- list(
+    title = title,
+    Pars = Pars,
+    plotPars=plotPars,
+    tabs = tabs,
+    its = its,
+    nyears=nyears,
+    proyears=proyears,
+    date=NULL
+  )
+
+  outname <- paste0("_", RMD, ".html")
+  if (Class !="Hist" & Class !="OM") {
+    if (is.null(output_file)) output_file <- paste0(Pars$Name, outname)
+  } else {
+    if (is.null(output_file)) output_file <-  paste0(RMD, ".html")
+  }
+  message("Rendering HTML file")
+  
+  RMD <- paste0(RMD, ".Rmd")
+  if (dev) {
+    input <- file.path('inst/Rmd', Class, RMD) 
+  } else {
+    input <- file.path(system.file(package = 'DLMtool'),'Rmd', Class, RMD)  
+  }
+ 
+  knitr::knit_meta(class=NULL, clean = TRUE)
+  rend <- try(rmarkdown::render(input, params=Params,
+                                output_file=output_file,
+                                output_dir=output_dir,
+                                quiet=quiet), silent=TRUE)
+  if (class(rend) == "try-error") {
+    print(rend)
+  } else {
+    message("Rendered ", output_file, " in ", output_dir)
+    if (open) utils::browseURL(file.path(output_dir, output_file))
+  }
+}
+
+
+#' @method plot character
+#' @export
+#' @keywords internal
+plot.character <- function(x, Object, ...) {
+  plot.pars(x, Object, ...)  
+}
+
+#' @param Object An object of class `Stock` or `Fleet`
+#' @param Stock An object of class `Stock` required for `Fleet` parameters
+#' @rdname plot.Stock
+#' @export
+plot.pars <- function(x, Object, Stock=NULL, nsamp=3, nsim=200, nyears=50, 
+                      proyears=28, output_file=NULL, output_dir=getwd(), 
+                      quiet=TRUE, tabs=TRUE, title=NULL, date=NULL,
+                      plotPars =NULL, open=TRUE, dev=FALSE, ...) {
+  
+  StockDF <- data.frame(chr=c("M",
+                              "Growth",
+                              "Maturity",
+                              "Recruitment",
+                              "Spatial",
+                              "Depletion"),
+                        Class="Stock",
+                        stringsAsFactors = FALSE)
+  
+ FleetDF <- data.frame(chr=c("Effort",
+                              "Catchability",
+                              "MPA",
+                              "Selectivity"),
+                        Class="Fleet",
+                        stringsAsFactors = FALSE)
+  
+ DF <- dplyr::bind_rows(StockDF, FleetDF)
+  
+  if (!x %in% DF[,1]) 
+    stop("Invalid argument. Valid arguments are: ", paste0(DF[,1], sep=" "), call.=FALSE)
+  
+  Class <- DF$Class[match(x, DF[,1])]
+  if (class(Object) !="OM" & class(Object) != Class) 
+    stop("Incorrect class object for this parameter", call.=FALSE)
+  
+  
+  if (x == "M") x <- "NaturalMortality"
+  
+  render_plot(Object=Object, Class=Class, Stock=Stock, RMD=x, nsamp=nsamp, nsim=nsim, 
+              nyears=nyears, proyears=proyears,
+              output_file=output_file, output_dir=output_dir, quiet=quiet,
+              tabs=tabs, title=title, date=date,
+              plotPars=plotPars, open=open, dev=dev)
+}  
+
+
+
+#' @title Plot Operating Model Object
+#' 
+#' @description Generate HTML reports with plots of operating model components ("Stock",
+#' "Fleet", "Obs", and "Imp"), the historical simulations ("Hist"), or the complete OM ("OM").
+#' 
+#' The individual component plots of objects of class `Stock` and `Fleet` can also be generated by 
+#' using the generic `plot.pars` function. See Examples below.
+#' 
+#' @param x An object of class `Stock`, `Fleet`, `Obs`, `Imp`, `Hist`, or `OM`, OR one 
+#' of the following character strings for `Object` of class `Stock`: "M", "Growth", "Maturity", "Recruitment", "Spatial",
+#' or "Depletion" and for `Object` of class `Fleet`: "Effort", "Catchability", "MPA",
+#' and "Selectivity".
+#' @param nsamp The number of random samples to show in the plot
+#' @param nsim The number of simulations (only used for objects not of class `OM`)
+#' @param nyears The number of historical years (only used for objects not of class `OM`)
+#' @param proyears The number of projection years (only used for objects not of class `OM`)
+#' @param output_file Name of the output html file (without file extension)
+#' @param output_dir Output directory. Defaults to `getwd()`
+#' @param quiet An option to suppress printing of the pandoc command line 
+#' @param tabs Include tabs in the HTML file?
+#' @param title Optional title for the markdown report
+#' @param date Optional date for the markdown report
+#' @param plotPars A named list with options for plots:
+#' \itemize{
+#'   \item breaks - numeric. Number of breaks in histograms.
+#'   \item col - character. Color of histograms.
+#'   \item axes - logical. Include axes in histogram?
+#'   \item cex.main - numeric. Size of main title in plots.
+#'   \item lwd - numeric. Line width for time-series plots.
+#' }
+#' @param open Logical. Open the html file?
+#' @param dev Logical. For development use only.
+#' @param ... Not used
+#'
+#' @method plot Stock
+#' @export
+#' @examples
+#' \dontrun{
+#' # Plot Stock Object:
+#' Stock <- DLMtool::Albacore
+#' plot(Stock)
+#' 
+#' # Individual plots:
+#' plot("M", Stock)
+#' plot("Growth", Stock)
+#' plot("Maturity", Stock)
+#' plot("Recruitment", Stock)
+#' plot("Spatial", Stock)
+#' plot("Depletion", Stock)
+#' 
+#' # Plot Fleet Object
+#' Fleet <- DLMtool::Generic_DecE
+#' plot(Fleet, Stock)
+#' 
+#' # Individual plots:
+#' plot("Effort", Fleet, Stock)
+#' plot("Catchability", Fleet, Stock)
+#' plot("MPA", Fleet, Stock)
+#' plot("Selectivity", Fleet, Stock)
+#' 
+#' 
+#' # Plot Obs Object
+#' Obs <- DLMtool::Imprecise_Unbiased
+#' plot(Obs)
+#' 
+#' # Plot Imp Object
+#' Imp <- DLMtool::Overages
+#' plot(Imp)
+#' 
+#' 
+#' # Plot Hist Object
+#' OM <- DLMtool::testOM 
+#' Hist <- runMSE(OM, Hist=TRUE)
+#' plot(Hist)
+#' 
+#' # Plot OM Object
+#' plot(OM)
+#' }
+plot.Stock <- function(x, nsamp=3, nsim=200, nyears=50, 
+                       proyears=28, output_file=NULL, output_dir=getwd(), 
+                       quiet=TRUE, tabs=TRUE, title=NULL, date=NULL,
+                       plotPars =NULL, open=TRUE, dev=FALSE, ...){
+  
+  render_plot(Object=x, Class="Stock", RMD='Stock', nsamp=nsamp, nsim=nsim, 
+              nyears=nyears, proyears=proyears,
+              output_file=output_file, output_dir=output_dir, quiet=quiet,
+              tabs=tabs, title=title, date=date,
+              plotPars=plotPars, open=open, dev=dev)
+}
+
+
+#' @rdname plot.Stock
+#' @method plot Fleet
+#' @export
+plot.Fleet <- function(x, Stock=NULL, nsamp=3, nsim=200, nyears=50, 
+                       proyears=28, output_file=NULL, output_dir=getwd(), 
+                       quiet=TRUE, tabs=TRUE, title=NULL, date=NULL,
+                       plotPars =NULL, open=TRUE, dev=FALSE, ...){
+  if (class(Stock) !="Stock" & class(x) !="OM")
+    stop("Must provide object of class 'Stock'")
+  
+  render_plot(Object=x, Class="Fleet", Stock=Stock, RMD='Fleet', nsamp=nsamp, nsim=nsim, 
+              nyears=nyears, proyears=proyears,
+              output_file=output_file, output_dir=output_dir, quiet=quiet,
+              tabs=tabs, title=title, date=date,
+              plotPars=plotPars, open=open, dev=dev)
+}
+
+#' @rdname plot.Stock
+#' @method plot Obs
+#' @export
+plot.Obs <- function(x, nsamp=3, nsim=200, nyears=50, 
+                       proyears=28, output_file=NULL, output_dir=getwd(), 
+                       quiet=TRUE, tabs=TRUE, title=NULL, date=NULL,
+                       plotPars =NULL, open=TRUE, dev=FALSE, ...){
+  
+  render_plot(Object=x, Class="Obs", Stock=NULL, RMD='Obs', nsamp=nsamp, nsim=nsim, 
+              nyears=nyears, proyears=proyears,
+              output_file=output_file, output_dir=output_dir, quiet=quiet,
+              tabs=tabs, title=title, date=date,
+              plotPars=plotPars, open=open, dev=dev)
+}
+
+#' @rdname plot.Stock
+#' @method plot Imp
+#' @export
+plot.Imp <- function(x, nsamp=3, nsim=200, nyears=50, 
+                     proyears=28, output_file=NULL, output_dir=getwd(), 
+                     quiet=TRUE, tabs=TRUE, title=NULL, date=NULL,
+                     plotPars =NULL, open=TRUE, dev=FALSE, ...){
+  
+  render_plot(Object=x, Class="Imp", Stock=NULL, RMD='Imp', nsamp=nsamp, nsim=nsim, 
+              nyears=nyears, proyears=proyears,
+              output_file=output_file, output_dir=output_dir, quiet=quiet,
+              tabs=tabs, title=title, date=date,
+              plotPars=plotPars, open=open, dev=dev)
+}
+
+#' @rdname plot.Stock
+#' @method plot Hist
+#' @export
+plot.Hist <- function(x, nsamp=3, nsim=200, nyears=50, 
+                      proyears=28, output_file=NULL, output_dir=getwd(), 
+                      quiet=TRUE, tabs=TRUE, title=NULL, date=NULL,
+                      plotPars =NULL, open=TRUE, dev=FALSE, ...) {
+  render_plot(Object=x, Class="Hist", Stock=NULL, RMD='Hist', nsamp=nsamp, nsim=nsim, 
+              nyears=nyears, proyears=proyears,
+              output_file=output_file, output_dir=output_dir, quiet=quiet,
+              tabs=tabs, title=title, date=date,
+              plotPars=plotPars, open=open, dev=dev)
+}
+
+#' @rdname plot.Stock
+#' @method plot OM
+#' @export
+plot.OM <- function(x, nsamp=3, nsim=200, nyears=50, 
+                    proyears=28, output_file=NULL, output_dir=getwd(), 
+                    quiet=TRUE, tabs=TRUE, title=NULL, date=NULL,
+                    plotPars =NULL, open=TRUE, dev=FALSE, ...) {
+  render_plot(Object=x, Class="OM", Stock=NULL, RMD='OM', nsamp=nsamp, nsim=nsim, 
+              nyears=nyears, proyears=proyears,
+              output_file=output_file, output_dir=output_dir, quiet=quiet,
+              tabs=tabs, title=title, date=date,
+              plotPars=plotPars, open=open, dev=dev)
+  
+  
+}
+
+#### --- Old Code ----------------------------------------------------------####
 #' Plot the Historical Spatial Closures
 #'
 #' @param OM An object of class OM
-#'
+#' @param sim Optional. Simulation number to plot
 #'
 #' @export
 #' @author A. Hordyk
 #'
 #' @examples
+#' \dontrun{
 #' OM <- new("OM", Albacore, Generic_Fleet, Perfect_Info, Perfect_Imp)
 #' 
 #' ## 50% of Area 1 was closed 30 years ago 
@@ -20,14 +379,20 @@
 #' 
 #' OM@MPA <- matrix(c(cl1, cl2, cl3), ncol=3, byrow=TRUE)
 #' plotMPA(OM)
+#' }
 #' 
-plotMPA <- function(OM) {
-  if (class(OM)!="OM") stop("Must supply object of class 'OM'")
+plotMPA <- function(OM, sim=NA) {
+  .Deprecated('plot("MPA", Fleet, Stock')
+  if (class(OM)!="OM") stop("Object must be class 'OM'")
   if (class(OM)=="OM") {
     proyears <- OM@proyears
   } else {
     proyears <- 0
   }
+  set.seed(OM@seed)
+  if (is.na(sim)) sim <- ceiling(runif(1, 1,OM@nsim))
+  if (sim > OM@nsim) sim <- OM@nsim
+  
   nyears <- OM@nyears
   if (all(!is.na(OM@MPA)) && sum(OM@MPA) != 0) { # historical spatial closures have been specified
     nareas <- ncol(OM@MPA)-1
@@ -44,13 +409,19 @@ plotMPA <- function(OM) {
   
   x <- 1:(nyears+proyears)
   nyrs <- length(x)
-  op <- par(mfrow=c(1,1), mar=c(3,3,0,0), oma=c(0,0,1,0))
+  op <- par(mfrow=c(1,1), mar=c(3,3,0,0), oma=c(0,0,1,0), no.readonly = TRUE)
+  on.exit(par(op))
   
-  
-  plot(c(1, nyears+proyears), c(0,nareas), type="n", bty="n", xlab="", ylab="", axes=FALSE)
-  origin <- seq(0, by=1, length.out = nareas)
+  OM@Prob_staying <- c(0.5,0.5)
+  Stock <- SampleStockPars(OM, cpars=OM@cpars, msg = FALSE)
+ 
+  area_sizes <- Stock$Asize[sim,]
+
+  plot(c(1, nyears+proyears), c(0,sum(area_sizes)), type="n", bty="n", xlab="", ylab="", axes=FALSE)
+
+  origin <- cumsum(c(0, area_sizes)) #  seq(0, by=1, length.out = nareas)
   for (aa in 1:nareas) {
-    polygon(x=c(x, rev(x)), y=c(rep(origin[aa], nyrs), origin[aa]+rev(MPA[,aa])), 
+    polygon(x=c(x, rev(x)), y=c(rep(origin[aa], nyrs), origin[aa+1]*rev(MPA[,aa])), 
             col='lightgray', border = TRUE)
   }
   
@@ -63,12 +434,13 @@ plotMPA <- function(OM) {
   
   mtext(side=1, "Years", line=2, xpd=NA, cex=1.25)
   
-  axis(side=2, at=seq(0.5, by=1, length.out = nareas), labels=1:nareas, las=1, col = "white", tcl = 0)
+  axis(side=2, at=origin[1:(length(origin)-1)] + 0.5 * area_sizes, labels=1:nareas, las=1, col = "white", tcl = 0)
+  
   mtext(side=2, "Areas", line=2, xpd=NA, cex=1.25, las=3)
   abline(v=nyears, lty=2, col="darkgray")
   
-  title('Fraction open to fishing (grey)', outer=TRUE)
-  on.exit(par(op))
+  title(paste0('Fraction open to fishing (grey) (sim = ', sim, ")"), outer=TRUE)
+  
 }
 
 #' Plot the vulnerability and retention curves 
@@ -83,14 +455,15 @@ plotMPA <- function(OM) {
 #' @export
 #'
 plotSelect <- function(OM, Pars=NULL, pyears=4, sim=NA, type="l") {
+  .Deprecated('plot("Selectivity", Fleet, Stock')
   if (class(OM) != "OM") stop("Object must be class 'OM' ")
   nsim <- OM@nsim
   if (!is.na(sim)) OM@nsim <- nsim <- max(10, sim) # OM@nsim 
   years <- OM@nyears + OM@proyears
   yr.vert <- round(seq(1, years, length.out=pyears),0)
   if (is.null(Pars)) {
-    stckPars <- SampleStockPars(OM, Msg=FALSE)
-    Pars <- c(stckPars, SampleFleetPars(OM, Stock=stckPars))
+    stckPars <- SampleStockPars(OM, msg=FALSE)
+    Pars <- c(stckPars,SampleFleetPars(OM, Stock=stckPars, msg=FALSE))
   }
   
   set.seed(OM@seed)
@@ -99,6 +472,7 @@ plotSelect <- function(OM, Pars=NULL, pyears=4, sim=NA, type="l") {
   if (pyears > 1) gr <- c(2, pyears)
   if (pyears == 1) gr <- c(1, 2)
   op <- par(mfcol=gr, bty="l", las=1, mar=c(3,3,2,0), oma=c(3,3,2,1), xpd=NA)
+  on.exit(par(op))
   
   for (yr in yr.vert) {
     # plot vulnerability & selection at age
@@ -145,7 +519,6 @@ plotSelect <- function(OM, Pars=NULL, pyears=4, sim=NA, type="l") {
     
   }
   mtext(side=3, paste0("Selection and Retention curves for simulation: ", sim),  outer=TRUE)
-  on.exit(par(op))
   
   invisible(list(V=Pars$V, V2=Pars$V2 ,retA=Pars$retA, DR=Pars$DR, 
                  Fdisc=Pars$Fdisc, sim=sim))
@@ -161,8 +534,12 @@ plotSelect <- function(OM, Pars=NULL, pyears=4, sim=NA, type="l") {
 #' @author A. Hordyk
 #' @export
 #'
-#' @examples plotM(Albacore)
+#' @examples 
+#' \dontrun{
+#' plotM(Albacore)
+#' }
 plotM <- function(Stock, nsim=5) {
+  .Deprecated('plot("M", Stock')
   if (class(Stock) != "Stock" && class(Stock) != "OM") stop("Must supply object of class 'Stock' or 'OM'")
   
   nyears <- 30
@@ -171,7 +548,7 @@ plotM <- function(Stock, nsim=5) {
   if (class(Stock) == "OM") {
     # custom parameters exist - sample and write to list
     if(length(Stock@cpars)>0){
-      ncparsim<-cparscheck(Stock@cpars)   # check each list object has the same length and if not stop and error report
+      # ncparsim<-cparscheck(Stock@cpars)   # check each list object has the same length and if not stop and error report
       SampCpars <- SampleCpars(Stock@cpars, nsim) 
     }
     nyears <- Stock@nyears 
@@ -179,7 +556,7 @@ plotM <- function(Stock, nsim=5) {
     Stock@nsim <- nsim
   }
   
-  StockPars <- SampleStockPars(Stock, nsim, nyears, proyears, SampCpars, Msg=FALSE)
+  StockPars <- SampleStockPars(Stock, nsim, nyears, proyears, SampCpars, msg=FALSE)
   # Assign Stock pars to function environment
   for (X in 1:length(StockPars)) assign(names(StockPars)[X], StockPars[[X]])
   
@@ -188,7 +565,6 @@ plotM <- function(Stock, nsim=5) {
   Wt_at_age <- StockPars$Wt_age
   op <- par(no.readonly = TRUE)
   on.exit(par(op))
-  
   
   par(mfrow=c(3,3), bty="l", las=1, mar=c(3,3,2,1), oma=c(2,2,0,0))
   ylim <- c(0, max(M_at_age))
@@ -258,9 +634,9 @@ hist2 <- function(x, col, axes=FALSE, main="", breaks=10,cex.main=1) {
 
 
 
-#' @method plot Stock
-#' @export
-plot.Stock <- function(x, ...)  plotStock(x, ...)
+# #' @method plot Stock
+# #' @export
+# plot.Stock <- function(x, ...)  plotStock(x, ...)
 
 #' Plot the Stock object parameters 
 #' 
@@ -284,6 +660,7 @@ plot.Stock <- function(x, ...)  plotStock(x, ...)
 plotStock <- function(x, nsamp=3, nsim=500, nyears=50, proyears=28, 
                       col="darkgray", breaks=10, lwd=2, ask=FALSE, incVB=TRUE, ...) {
   Stock <- x 
+  .Deprecated('plot.Stock')
   SampCpars <- list() # empty list 
   if (class(Stock) == "OM") {
     Stock <- updateMSE(x) 
@@ -292,16 +669,18 @@ plotStock <- function(x, nsamp=3, nsim=500, nyears=50, proyears=28,
     if (is.finite(Stock@nsim)) nsim <- Stock@nsim	
     
     if(length(Stock@cpars)>0){ # custom parameters exist - sample and write to list
-      ncparsim<-cparscheck(Stock@cpars)   # check each list object has the same length and if not stop and error report
-      SampCpars <- SampleCpars(Stock@cpars, nsim) 
+      #ncparsim<-cparscheck(Stock@cpars)   # check each list object has the same length and if not stop and error report
+      SampCpars <- SampleCpars(Stock@cpars, nsim, msg=FALSE) 
     }
     Stock <- SubOM(Stock)
   }
   its <- sample(1:nsim, nsamp)
-  
+ 
   
   # --- Sample Stock Parameters ----
-  StockPars <- SampleStockPars(Stock, nsim, nyears, proyears, SampCpars, Msg=FALSE)
+
+  StockPars <- SampleStockPars(Stock, nsim, nyears, proyears, SampCpars, msg=FALSE)
+ 
   # Assign Stock pars to function environment
   for (X in 1:length(StockPars)) assign(names(StockPars)[X], StockPars[[X]])
   
@@ -320,6 +699,7 @@ plotStock <- function(x, nsamp=3, nsim=500, nyears=50, proyears=28,
   # layout.show(m)
   # stop()
   op <- par(mar = c(2, 1, 3, 1), oma=c(1,2,4,1), ask=FALSE, las=1)
+  on.exit(par(op))
   
   # Row 1 -- Natural Mortality ---- 
   hist2(M, col=col, axes=FALSE, main="M", breaks=breaks)
@@ -328,9 +708,10 @@ plotStock <- function(x, nsamp=3, nsim=500, nyears=50, proyears=28,
   hist2(Msd, col=col, axes=FALSE, main="Msd", breaks=breaks)
   abline(v=Msd[its], col=1:nsamp, lwd=lwd)
   axis(side=1) 
-  hist2(Mgrad, col=col, axes=FALSE, main="Mgrad", breaks=breaks)
-  abline(v=Mgrad[its], col=1:nsamp, lwd=lwd)
-  axis(side=1)
+  plot(c(0,1), c(0,1), type="n", axes=FALSE, xlab="", ylab="")
+  # hist2(Mgrad, col=col, axes=FALSE, main="Mgrad", breaks=breaks)
+  # abline(v=Mgrad[its], col=1:nsamp, lwd=lwd)
+  # axis(side=1)
   
   # M traj
   matplot(t(Marray[its,]), type="l", lty=1, bty="l", main="M by Year", lwd=lwd)
@@ -381,9 +762,10 @@ plotStock <- function(x, nsamp=3, nsim=500, nyears=50, proyears=28,
   hist2(Linfsd, col=col, axes=FALSE, main="Linfsd", breaks=breaks)
   abline(v=Linfsd[its], col=1:nsamp, lwd=lwd)
   axis(side=1)  
-  hist2(Linfgrad, col=col, axes=FALSE, main="Linfgrad", breaks=breaks)
-  abline(v=Linfgrad[its], col=1:nsamp, lwd=lwd)
-  axis(side=1)
+  plot(c(0,1), c(0,1), type="n", axes=FALSE, xlab="", ylab="")
+  # hist2(Linfgrad, col=col, axes=FALSE, main="Linfgrad", breaks=breaks)
+  # abline(v=Linfgrad[its], col=1:nsamp, lwd=lwd)
+  # axis(side=1)
   
   # Linf traj 
   matplot(t(Linfarray[its,]), type="l", bty="l", main="Linf by Year", lwd=lwd, lty=1)
@@ -400,9 +782,10 @@ plotStock <- function(x, nsamp=3, nsim=500, nyears=50, proyears=28,
   hist2(Ksd, col=col, axes=FALSE, main="Ksd", breaks=breaks)
   abline(v=Ksd[its], col=1:nsamp, lwd=lwd)
   axis(side=1) 
-  hist2(Kgrad, col=col, axes=FALSE, main="Kgrad", breaks=breaks)
-  abline(v=Kgrad[its], col=1:nsamp, lwd=lwd)
-  axis(side=1)  
+  plot(c(0,1), c(0,1), type="n", axes=FALSE, xlab="", ylab="")
+  # hist2(Kgrad, col=col, axes=FALSE, main="Kgrad", breaks=breaks)
+  # abline(v=Kgrad[its], col=1:nsamp, lwd=lwd)
+  # axis(side=1)  
   
   # K traj 
   matplot(t(Karray[its,]), type="l", bty="l", main="K by Year", lwd=lwd, lty=1)
@@ -419,7 +802,8 @@ plotStock <- function(x, nsamp=3, nsim=500, nyears=50, proyears=28,
   abline(v=AC[its], col=1:nsamp, lwd=lwd)
   axis(side=1)
   
-  matplot(t(Perr[its,]), type="l", bty="l", main="Rec Devs by Year", lwd=lwd, lty=1)
+  # matplot(t(Perr[its,]), type="l", bty="l", main="Rec Devs by Year", lwd=lwd, lty=1)
+  matplot(t(Perr_y[its,]), type="l", bty="l", main="Rec Devs by Year", lwd=lwd, lty=1)
   
   biomass <- seq(0, 1.5, by=0.05)
   
@@ -490,16 +874,15 @@ plotStock <- function(x, nsamp=3, nsim=500, nyears=50, proyears=28,
     title("Sampled length-at-age curves", outer=TRUE, cex.main=2)
   }
   
-  on.exit(par(op))
-  
+  invisible(StockPars)
 }
 
 
 
 
-#' @method plot Fleet
-#' @export
-plot.Fleet <- function(x, ...)  plotFleet(x, ...)
+# #' @method plot Fleet
+# #' @export
+# plot.Fleet <- function(x, ...)  plotFleet(x, ...)
 
 #' Plot the Fleet object parameters 
 #' 
@@ -517,7 +900,7 @@ plot.Fleet <- function(x, ...)  plotFleet(x, ...)
 #' @export 
 plotFleet <- function(x, Stock=NULL, nsamp=3, nsim=500, proyears=28, col="darkgray", 
                       breaks=10, lwd=2, ...) { 
-  
+  .Deprecated('plot.Fleet')
   Fleet <- updateMSE(x) # add missing slots with default values 
   SampCpars <- list() # empty list 
   nyears <- Fleet@nyears
@@ -525,8 +908,8 @@ plotFleet <- function(x, Stock=NULL, nsamp=3, nsim=500, proyears=28, col="darkgr
     if (is.finite(Fleet@proyears)) proyears <- Fleet@proyears
     if (is.finite(Fleet@nsim)) nsim <- Fleet@nsim	
     if (length(Fleet@cpars) > 0) {
-      ncparsim <-cparscheck(Fleet@cpars)   # check each list object has the same length and if not stop and error report
-      SampCpars <- SampleCpars(Fleet@cpars, nsim) 
+      # ncparsim <-cparscheck(Fleet@cpars)   # check each list object has the same length and if not stop and error report
+      SampCpars <- SampleCpars(Fleet@cpars, nsim, msg=FALSE) 
     }
     Stock <- SubOM(Fleet, "Stock")
     Fleet <- SubOM(Fleet, "Fleet")
@@ -535,7 +918,7 @@ plotFleet <- function(x, Stock=NULL, nsamp=3, nsim=500, proyears=28, col="darkgr
   
   its <- sample(1:nsim, nsamp)  
   
-  StockPars <- SampleStockPars(Stock, nsim, nyears, proyears, SampCpars, Msg=FALSE)
+  StockPars <- SampleStockPars(Stock, nsim, nyears, proyears, SampCpars, msg=FALSE)
   # Assign Stock pars to function environment
   for (X in 1:length(StockPars)) assign(names(StockPars)[X], StockPars[[X]])
   
@@ -559,7 +942,8 @@ plotFleet <- function(x, Stock=NULL, nsamp=3, nsim=500, proyears=28, col="darkgr
   heights=c(1,0.2, 1,0.3, 1, 0.3, 1, 0.3, 1))
   # layout.show(m)				   
   
-  op <- par(mar = c(2,2, 2, 1), oma=c(2,2,4,1), las=1)  
+  op <- par(mar = c(2,2, 2, 1), oma=c(2,2,4,1), las=1)
+  on.exit(par(op))	 
   hist2(Esd, col=col, axes=FALSE, main="Esd", breaks=breaks)
   abline(v=Esd[its], col=1:nsamp, lwd=lwd)
   axis(side=1) 
@@ -647,13 +1031,13 @@ plotFleet <- function(x, Stock=NULL, nsamp=3, nsim=500, proyears=28, col="darkgr
   # om <- new("OM", Stock, Fleet, Perfect_Info, Perfect_Imp)
   # plotSelect(om)
   
-  on.exit(par(op))	  
+  invisible(FleetPars)
 }
 
 
-#' @method plot Obs
-#' @export
-plot.Obs <- function(x, ...)  plotObs(x, ...)
+# #' @method plot Obs
+# #' @export
+# plot.Obs <- function(x, ...)  plotObs(x, ...)
 
 #' Plot the Observation object parameters 
 #' 
@@ -672,19 +1056,24 @@ plot.Obs <- function(x, ...)  plotObs(x, ...)
 #' @export 
 plotObs <- function(x, nsim=500, nyears=50, 
                     col="darkgray", breaks=10, ...) {
-  
+  .Deprecated('plot.Obs')
   Obs <- x
+  SampCpars <- list() # empty list 
   if (class(Obs) == "OM") {
     if (is.finite(Obs@nyears)) nyears <- Obs@nyears
     if (is.finite(Obs@nsim)) nsim <- Obs@nsim	
+    if (length(Obs@cpars) > 0) {
+      # ncparsim <-cparscheck(Obs@cpars)   # check each list object has the same length and if not stop and error report
+      SampCpars <- SampleCpars(Obs@cpars, nsim, msg=FALSE) 
+    }
     Obs <- SubOM(Obs,"Obs")
   }
-  
+
   nsamp <- 3
   its <- sample(1:nsim, nsamp)
   
   # === Sample Observation Model Parameters ====
-  ObsPars <- SampleObsPars(Obs, nsim)
+  ObsPars <- SampleObsPars(Obs, nsim, cpars = SampCpars)
   # Assign Obs pars to function environment
   for (X in 1:length(ObsPars)) assign(names(ObsPars)[X], ObsPars[[X]])
   
@@ -692,6 +1081,7 @@ plotObs <- function(x, nsim=500, nyears=50,
   # === Non time series ==================================================================== 
   cex.main <- 0.5
   op <- par(mfrow=c(4,4),mai=c(0.6,0.6,0.25,0.01),omi=c(0.01,0.01,0.4,0.01))
+  on.exit(par(op))	 
   
   hist2(CAA_nsamp,col=col,axes=FALSE, main="No. annual catch-at-age obs (CAA_samp)", breaks=breaks,cex.main=cex.main)
   axis(side=1) 
@@ -800,14 +1190,13 @@ plotObs <- function(x, nsim=500, nyears=50,
   if (!is.na(Obs@Name)) mtext(paste0("Observation time series plots for observation object ",Obs@Name),3,outer=T,line= 0.7,font=2)
   if (is.na(Obs@Name)) mtext(paste0("Observation time series plots for observation object "),3,outer=T,line= 0.7,font=2)
   
-  on.exit(par(op))
-  
+  invisible(ObsPars)
 }
 
 
-#' @method plot Imp
-#' @export
-plot.Imp <- function(x, ...)  plotImp(x, ...)
+# #' @method plot Imp
+# #' @export
+# plot.Imp <- function(x, ...)  plotImp(x, ...)
 
 #' Plot the Implementation object parameters 
 #' 
@@ -826,6 +1215,8 @@ plot.Imp <- function(x, ...)  plotImp(x, ...)
 #' @export 
 plotImp<-function(x,nsim=500, nyears=50, 
                   col="darkgray", breaks=10, ...){
+  
+  .Deprecated('plot.Imp')
   Imp <- x
   if (class(Imp) == "OM") {
     if (is.finite(Imp@nyears)) nyears <- Imp@nyears
@@ -842,7 +1233,7 @@ plotImp<-function(x,nsim=500, nyears=50,
   its <- sample(1:nsim, nsamp)
   
   op <- par(mfrow=c(4,3),mai=c(0.6,0.6,0.2,0.01),omi=c(0.01,0.01,0.4,0.01))
-  
+  on.exit(par(op))	 
   
   ObsTSplot(TACFrac,TACSD,nyears,labs=c("Fraction of TAC (TACFrac)",
                                         "TAC error (TACSD)","TAC discrepancy for three samples",
@@ -858,8 +1249,7 @@ plotImp<-function(x,nsim=500, nyears=50,
   
   mtext(paste0("Implementation error time series plots for implementation object ",Imp@Name),3,outer=T,line= 0.7,font=2)
   
-  on.exit(par(op))
-  
+  invisible(ImpPars)
 }
 
 
@@ -896,82 +1286,114 @@ ObsTSplot<-function(Cbias,Csd,nyears,labs, breaks, its, nsamp, col){
 #' 
 #' A function that plots the parameters and resulting time series of an operating model.
 #' 
-#' @param x An object of class OM or a list with historical simulation information (ie runMSE(OM, Hist=TRUE))
+#' @param x An object of class OM or an object of class Hist (ie runMSE(OM, Hist=TRUE))
+#' @param rmd Logical. Used in a rmd file?
+#' @param head Character. Heading for rmd file. Default is '##' (second level heading)
 #' @param ...  Optional additional arguments passed to \code{plot}
 #' @rdname plot-OM
-#' @method plot OM 
 #' @author T. Carruthers
 #' @export 
-plot.OM <-function(x, ...){  
-  if (class(x) == "OM") {
-    OM <- updateMSE(x) # update and add missing slots with default values
-    out<-runMSE(OM,Hist=T)
-    nsim<-OM@nsim
-    nyears<-OM@nyears
-    plotStock(OM)
-    plotFleet(OM)
-    plotObs(OM)
-    plotImp(OM)
-    yrlab<-OM@CurrentYr-((nyears-1):0)
-  } else if (class(x) == "list") {
-    out <- x 
-    nyears <- dim(out$TSdata[[1]])[1]
-    nsim <- dim(out$TSdata[[1]])[2]
-    yrlab<-nyears-((nyears-1):0)
-  } else stop("argument must be class 'OM' or 'list' ")
-  
-  # Time series
-  op <-par(mfrow=c(4,2),mai=c(0.7,0.7,0.05,0.05),omi=c(0.01,0.01,0.3,0.01))
-  
-  # SSB
-  TSplot(yrlab,out$TSdata$SSB,xlab="Historical year",ylab="Spawning biomass")
-  
-  # Depletion
-  TSplot(yrlab,out$TSdata$SSB/rep(out$MSYs$SSB0,each=nyears),xlab="Historical year",ylab="Stock depletion (SSB)")
-  
-  # Apical F
-  FM<-out$SampPars$Find*out$SampPars$qs
-  TSplot(yrlab,t(FM),xlab="Historical year",ylab="Fishing mortality rate (apical)")
-  
-  # Catches
-  TSplot(yrlab,out$TSdata$Catch,xlab="Historical year",ylab="Annual catches")
-  
-  # Recruitment
-  TSplot(yrlab,out$TSdata$Rec,xlab="Historical year",ylab="Recruitment")
-  
-  # SSB-Rec
-  TSplot(x=out$TSdata$SSB[2:nyears,],y=out$TSdata$Rec[2:nyears,],xlab="Spawning biomass",ylab="Recruitment",mat=F,type='p')
-  
-  F_FMSY<-FM/out$MSYs$FMSY
-  B_BMSY<-t(out$TSdata$SSB)/out$MSYs$SSBMSY
-  
-  TSKplot(B_BMSY,F_FMSY,yrlab)
-  
-  # Age vulnerability
-  maxage<-dim(out$SampPars$V)[2]
-  colors <- c("green","blue","grey45")
-  for (x in 1:3) {
-    Zvals <- t(out$SampPars$V[x,,1:nyears])
-    if(sd(Zvals, na.rm=TRUE) != 0) {
-      if (x==1)contour(x=yrlab,y=1:maxage,z=Zvals,levels=c(0.25,0.75),col=colors[x],drawlabels=F,lwd=c(1,2))
-      if (x!=1)contour(x=yrlab,y=1:maxage,z=Zvals,levels=c(0.25,0.75),col=colors[x],drawlabels=F, add=T,lwd=c(1,2))
-    }
-    
-  }
-  
-  # contour(x=yrlab,y=1:maxage,z=t(out$SampPars$V[2,,1:nyears]),levels=c(0.25,0.75),col='blue',drawlabels=F,add=T,lwd=c(1,2))
-  # contour(x=yrlab,y=1:maxage,z=t(out$SampPars$V[3,,1:nyears]),levels=c(0.25,0.75),col='grey45',drawlabels=F,add=T,lwd=c(1,2))
-  
-  legend('topright',legend=c(paste("Simulation",1:3)),text.col=c("green","blue","grey45"),bty='n')
-  legend('topleft',legend="Age vulnerability (0.25, 0.75)",bty='n')
-  
-  mtext("Historical year", 1, line = 2.5, cex = 1)
-  mtext("Age", 2, line = 2.3, cex = 1)
-  
-  if (class(x) == 'OM') mtext(paste0("Time series plots for operating model ",OM@Name),3,outer=T,line= 0.2,font=2)
-  
-  on.exit(par(op))
-  return(invisible(out))
+plotOM <-function(x, rmd=FALSE, head="##", ...){
+  .Deprecated('plot.OM')
+ op <- par(no.readonly = TRUE)
+ on.exit(par(op))
+ if (class(x) == "OM") {
+   OM <- updateMSE(x) # update and add missing slots with default values
+   out<-runMSE(OM,Hist=T, ...)
+   nsim<-OM@nsim
+   nyears<-OM@nyears
+   if (rmd) {
+     cat('\n')
+     cat('\n')
+     cat(head, 'Stock Object')
+     cat('\n')
+   }
+   plotStock(OM)
+   if (rmd) {
+     cat('\n')
+     cat('\n')
+     cat(head, 'Fleet Object')
+     cat('\n')
+   }
+   plotFleet(OM)
+   if (rmd) {
+     cat('\n')
+     cat('\n')
+     cat(head, 'Obs Object')
+     cat('\n')
+   }
+   plotObs(OM)
+   if (rmd) {
+     cat('\n')
+     cat('\n')
+     cat(head, 'Imp Object')
+     cat('\n')
+   }
+   plotImp(OM)
+   yrlab<-OM@CurrentYr-((nyears-1):0)
+ } else if (class(x) == "Hist") {
+   out <- x 
+   nyears <- dim(out@TSdata[[1]])[2]
+   nsim <- dim(out@TSdata[[1]])[1]
+   yrlab<-nyears-((nyears-1):0)
+ } else stop("argument must be class 'OM' or 'Hist' ")
+ 
+ if (rmd) {
+   cat('\n')
+   cat('\n')
+   cat(head, 'OM Simulations')
+   cat('\n')
+ }
+ 
+ # Time series
+ par(mfrow=c(4,2),mai=c(0.7,0.7,0.05,0.05),omi=c(0.01,0.01,0.3,0.01))
+ 
+ # SSB
+ TSplot(yrlab,out@TSdata$SSB,xlab="Historical year",ylab="Spawning biomass")
+ 
+ # Depletion
+ TSplot(yrlab,out@TSdata$SSB/rep(out@Ref$SSB0,each=nyears),xlab="Historical year",ylab="Stock depletion (SSB)")
+ 
+ # Apical F
+ FM<-t(out@TSdata$Find*out@OM$qs)
+ FM[FM > out@OM$maxF[1]] <- out@OM$maxF[1] # add maxF constraint
+ TSplot(yrlab,t(FM),xlab="Historical year",ylab="Fishing mortality rate (apical)")
+ 
+ # Catches
+ TSplot(yrlab,out@TSdata$Catch,xlab="Historical year",ylab="Annual catches")
+ 
+ # Recruitment
+ TSplot(yrlab,out@TSdata$Rec,xlab="Historical year",ylab="Recruitment")
+ 
+ # SSB-Rec
+ TSplot(x=out@TSdata$SSB[,2:nyears],y=out@TSdata$Rec[,2:nyears],
+        xlab="Spawning biomass",ylab="Recruitment",mat=F,type='p')
+ 
+ F_FMSY<-FM/matrix(out@Ref$FMSY, nrow=nyears, ncol=nsim, byrow=TRUE)
+ B_BMSY<-out@TSdata$SSB/matrix(out@Ref$SSBMSY, nrow=nsim, ncol=nyears)
+ 
+ TSKplot(B_BMSY,t(F_FMSY),yrlab)
+ 
+ # Age vulnerability
+ maxage<-dim(out@AtAge$Select)[2]
+ colors <- c("green","blue","grey45")
+ for (x in 1:3) {
+   Zvals <- t(out@AtAge$Select[x,,1:nyears])
+   if(sd(Zvals, na.rm=TRUE) != 0) {
+     if (x==1)contour(x=yrlab,y=1:maxage,z=Zvals,levels=c(0.25,0.75),col=colors[x],drawlabels=F,lwd=c(1,2))
+     if (x!=1)contour(x=yrlab,y=1:maxage,z=Zvals,levels=c(0.25,0.75),col=colors[x],drawlabels=F, add=T,lwd=c(1,2))
+   }
+ }
+ 
+ legend('topright',legend=c(paste("Simulation",1:3)),text.col=c("green","blue","grey45"),bty='n')
+ legend('topleft',legend="Age vulnerability (0.25, 0.75)",bty='n')
+ 
+ mtext("Historical year", 1, line = 2.5, cex = 1)
+ mtext("Age", 2, line = 2.3, cex = 1)
+ 
+ if (class(x) == 'OM') mtext(paste0("Time series plots for operating model ",OM@Name),3,outer=T,line= 0.2,font=2)
+ 
+ return(invisible(out))
 }
 
 TSplot<-function(x,y,xlab=NA,ylab=NA,zeroy=T,incx=T,incy=T,type='l',mat=T){
@@ -995,7 +1417,7 @@ TSplot<-function(x,y,xlab=NA,ylab=NA,zeroy=T,incx=T,incy=T,type='l',mat=T){
   abline(h=yl,col='white')
   
   if(mat){
-    matplot(x,y,type=type,col=cols,xlab="",ylab="",add=T)
+    matplot(x,t(y),type=type,col=cols,xlab="",ylab="",add=T)
   }else{
     if(type=='p')for(i in 1:nsim)points(x[,i],y[,i],col=cols[i],pch=19)
     if(type=='l')for(i in 1:nsim)lines(x[,i],y[,i],col=cols[i])

@@ -4,9 +4,9 @@
 \alias{popdynCPP}
 \title{Population dynamics model in CPP}
 \usage{
-popdynCPP(nareas, maxage, Ncurr, pyears, M_age, Asize_c, MatAge, WtAge, Vuln,
-  Retc, Prec, movc, SRrelc, Effind, Spat_targc, hc, R0c, SSBpRc, aRc, bRc, Qc,
-  Fapic, maxF, MPA, control, SSB0c)
+popdynCPP(nareas, maxage, Ncurr, pyears, M_age, Asize_c, MatAge, WtAge,
+  Vuln, Retc, Prec, movc, SRrelc, Effind, Spat_targc, hc, R0c, SSBpRc, aRc,
+  bRc, Qc, Fapic, maxF, MPA, control, SSB0c, plusgroup = 0L)
 }
 \arguments{
 \item{nareas}{The number of spatial areas}
@@ -30,6 +30,8 @@ popdynCPP(nareas, maxage, Ncurr, pyears, M_age, Asize_c, MatAge, WtAge, Vuln,
 \item{Retc}{Numeric matrix (maxage, pyears) with retention by age and year}
 
 \item{Prec}{Numeric vector (pyears) with recruitment error}
+
+\item{movc}{Numeric array (nareas by nareas) with the movement matrix}
 
 \item{SRrelc}{Integer indicating the stock-recruitment relationship to use (1 for Beverton-Holt, 2 for Ricker)}
 
@@ -58,9 +60,9 @@ popdynCPP(nareas, maxage, Ncurr, pyears, M_age, Asize_c, MatAge, WtAge, Vuln,
 \item{control}{Integer. 1 to use q and effort to calculate F, 2 to use Fapic (apical F) and
 vulnerablity to calculate F.}
 
-\item{SSBcurr}{A numeric vector of length nareas with the current spawning biomass in each area}
+\item{plusgroup}{Integer. Include a plus-group (1) or not (0)?}
 
-\item{mov}{Numeric matrix (nareas by nareas) with the movement matrix}
+\item{SSBcurr}{A numeric vector of length nareas with the current spawning biomass in each area}
 }
 \description{
 Project population forward pyears given current numbers-at-age and total mortality, etc

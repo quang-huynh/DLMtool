@@ -9,7 +9,7 @@ SampleImpPars(Imp, nsim = NULL, cpars = NULL)
 \arguments{
 \item{Imp}{An object of class 'Imp' or class 'OM'}
 
-\item{nsim}{Number of simulations. Ignored if 'Stock' is class 'OM'}
+\item{nsim}{Number of simulations. Ignored if 'Imp' is class 'OM'}
 
 \item{cpars}{Optional named list of custom parameters. Ignored if 'OM' is class 'OM'}
 }
@@ -19,3 +19,4 @@ A named list of sampled Implementation Error parameters
 \description{
 Sample Implementation Error Parameters
 }
+\keyword{internal}

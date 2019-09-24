@@ -5,31 +5,31 @@
 \title{Run a Management Strategy Evaluation}
 \usage{
 runMSE(OM = DLMtool::testOM, MPs = c("AvC", "DCAC", "FMSYref", "curE",
-  "matlenlim", "MRreal"), CheckMPs = FALSE, timelimit = 1, Hist = FALSE,
-  ntrials = 50, fracD = 0.05, CalcBlow = TRUE, HZN = 2, Bfrac = 0.5,
-  AnnualMSY = TRUE, silent = FALSE, PPD = FALSE, parallel = FALSE,
-  save_name = NULL, checks = FALSE, control = NULL)
+  "matlenlim", "MRreal"), CheckMPs = FALSE, timelimit = 1,
+  Hist = FALSE, ntrials = 100, fracD = 0.05, CalcBlow = TRUE,
+  HZN = 2, Bfrac = 0.5, AnnualMSY = TRUE, silent = FALSE,
+  PPD = TRUE, parallel = FALSE, save_name = NULL, checks = FALSE,
+  control = NULL)
 }
 \arguments{
 \item{OM}{An operating model object (class 'OM')}
 
-\item{MPs}{A vector of methods (character string) of class Output or
-Input.}
+\item{MPs}{A vector of methods (character string) of class MP}
 
-\item{CheckMPs}{Logical to indicate if Can function should be used to check
+\item{CheckMPs}{Logical to indicate if \link{Can} function should be used to check
 if MPs can be run.}
 
 \item{timelimit}{Maximum time taken for a method to carry out 10 reps
 (methods are ignored that take longer)}
 
-\item{Hist}{Should model stop after historical simulations? Returns a list
-containing all historical data}
+\item{Hist}{Should model stop after historical simulations? Returns an object of
+class 'Hist' containing all historical data}
 
 \item{ntrials}{Maximum of times depletion and recruitment deviations are
 resampled to optimize for depletion. After this the model stops if more than
 percent of simulations are not close to the required depletion}
 
-\item{fracD}{maximum allowed proportion of simulations where depletion is not
+\item{fracD}{Maximum allowed proportion of simulations where depletion is not
 close to sampled depletion from OM before model stops with error}
 
 \item{CalcBlow}{Should low biomass be calculated where this is the spawning
@@ -41,7 +41,7 @@ in the Blow calculation}
 
 \item{Bfrac}{The target fraction of SSBMSY for calculating Blow}
 
-\item{AnnualMSY}{Logical. Should MSY statistics be calculated for each projection year?
+\item{AnnualMSY}{Deprecated. Always set to TRUE now. Logical. Should MSY statistics be calculated for each projection year?
 May differ from MSY statistics from last historical year if there are changes in productivity}
 
 \item{silent}{Should messages be printed out to the console?}
@@ -57,11 +57,22 @@ May differ from MSY statistics from last historical year if there are changes in
 \item{control}{control options for testing and debugging}
 }
 \value{
-An object of class MSE
+An object of class \linkS4class{MSE}
 }
 \description{
 A function that runs a Management Strategy Evaluation (closed-loop
 simulation) for a specified operating model
+}
+\section{Functions}{
+\itemize{
+\item \code{runMSE}: Default function to use.
+}}
+
+\note{
+See relevant section of the \href{https://dlmtool.github.io/DLMtool/userguide/running-the-mse.html}{DLMtool User Guide} for more information.
+}
+\seealso{
+\link{joinMSE} \link{checkMSE} \link{updateMSE}
 }
 \author{
 T. Carruthers and A. Hordyk

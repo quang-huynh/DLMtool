@@ -1,11 +1,148 @@
 The current version of the DLMtool package is available for download from [CRAN](https://CRAN.R-project.org/package=DLMtool).
 
-## DLMtool 5.1.999 Development Version 
-- update PM methods and add to userguide - in development
-- improve convergence diagnostic in `Converge`
-- modified CAL generation to deal for dome-shaped selectivity better 
-- improved help documentation for functions and MPs by combining and linking similiar functions
-- add ImputeLH - impute correlated life-history parameters
+## DLMtool 5.4.0
+### Minor changes 
+- The `Data` object has been updated, main new features are the addition of an Effort slot
+(`Data@Effort` and `Data@CV_Effort`) and all CV by year for all time-series information.
+- the `Data@RInd` slot has been removed and replaced with `Data@AddInd`
+- Additional information on the Data object can be found [here](https://dlmtool.github.io/DLMtool/Data/Data.html).
+
+### Fixes
+- fix bug where TAE implementation error was affecting TAC controls (thanks to Robyn Forrest and Sean Anderson for finding this)
+- fix bug in `Cplot` (thanks Sarah Valencia for picking this up)
+- fix bug with `runMSE(Hist=TRUE)` where under some conditions the `Hist` object could not be stitched back together. 
+- add informative error message when MPs are dropped because they crash
+
+### New Additions
+- Added average annual variability in effort (`AAVE`) performance objective method
+- Added MP type as column in `PMObj` function
+- Add a constant current catch MP - `CurC`
+- new `Dom` function (and removed old `DOM` function)
+- add option to include a plus-group (e.g., OMs from `SS2OM`). To use a plus-group, use `OM@cpars$plusgroup = 1`
+
+
+## DLMtool 5.3.1 
+ 
+### Minor changes 
+- add option to specify width of the CAL bins using `OM@cpars$binWidth`
+- change MGT calculation from Z to M
+- add option to hide printed results in `TradePlot`
+
+### Fixes
+- fix indexing issue for recruitment deviations
+- fix issue with `cpars$mov` when nareas>2
+- fix issue with running MSE in parallel when some MPs fail
+
+
+## DLMtool 5.3 
+
+### New Features
+- The `runMSE` function is now more robust. MPs that fail (i.e. crash R) are now skipped without stopping the entire MSE. A warning message alerts users which MPs have been dropped from the analysis. 
+- `runMSE(Hist=TRUE)` returns a new S4 object of class 'Hist'. This change means that information from historical simulations is now accessed using `@` instead of `$`. For example: 
+       `Hist <- runMSE(Hist=TRUE)` 
+       `TS <- Hist@TSdata # time-series data`
+       `Data <- Hist@Data # Data object from end of historical period `
+- `runMSE(Hist=TRUE)` now works with parallel processing
+- The [cheat sheets](https://dlmtool.github.io/DLMtool/cheat_sheets/CheatSheets.html) have been updated. They can be accessed from within the R console using `cheatsheets`
+- It is now possible to specify time-varying movement between areas using `OM@cpars$mov`.
+- `Uses` function has been added to return MPs that use a particular data slot. For example: `Uses('AvC`)
+- Depletion for the initial year of the simulations can now be specified using `OM@cpars$initD`.
+- Real indices of abundance can be added to the Data object and used to condition OM. 
+- The calculations for unfished and MSY reference points have been standardized and are now fully described in the [userguide](https://dlmtool.github.io/DLMtool/userguide/assumptions-of-dlmtool.html#calculating-reference-points.html)
+- New functions `PMLimit` and `PMObj` have been added to generate interacive HTML tables showing the performance of MPs (using objects of class `PM`)
+- An argument `Labels` has been added to the `TradePlot` function and related functions (`Tplot` etc). This allows users to replace the default MP name with something more user-friendly. For example: `TradePlot(MSE, Labels=list(AvC="Average Catch"))`. An argument `cols` has also been added so users have full control on the colors of the points and labels. The MP labels can be removed completely by setting the `lab.size` argument to `NULL`
+
+ 
+### Major changes 
+- The slots for specifying gradients in life-history parameters (e.g `Stock@Mgrad`, `Stock@Linfgrad`) 
+have been removed. Time-varying parameters should now be specified with `OM@cpars`.
+- Biological reference points (SSB0, BMSY, FMSY, etc) are now calculated using a running average of the life-history 
+and selectivity parameters over a period equal to the age of maturity for each simulation. See the [userguide](https://dlmtool.github.io/DLMtool/userguide/assumptions-of-dlmtool.html#calculating-reference-points.html) for more information. 
+- The `AnnualMSY` argument is now deprecated. MSY reference points are now always calculated in every time-step.
+- The `runMSErobust` function has been now removed from package (it was broken in the previous version). 
+
+### Fixes
+- fix issue with importing `Data` objects with larger number of length bins
+- fix issue where length-at-age was negative with high t0
+- allow custom area size for nareas > 2 in cpars
+- fix issue with `curE75` which was ratcheting down effort 
+- fix issue with effort calculation when both effort control and TAC are implemented
+- fix random seed in `Turing` function
+- speed up plots in `Turing` function
+- speed up plots in `summary(Data)`
+- fix bug in CAL_nsamp and CAL_ESS when importing Obs object from CSV
+- fix typo in documentation for Itarget MPs
+
+
+## DLMtool 5.2.3
+
+### New features
+- A two-page cheat-sheet has been developed for main DLMtool functions. Access the 
+online version with `cheatsheets()`
+- New function to provide bootstrapped samples of von Bertalanffy growth parameters directly to cpars (`Growth2OM`)
+- New function to estimate length-weight parameters from data (`LW2OM`). 
+
+### Minor changes
+- update `plotMPA` to include relative size of areas
+
+### Fixes
+- export built in MPs from MSEtool package to parallel cluster
+- fix issue with CAA at very low stocks sizes
+- fix issue with MSY calculations with Ricker SRR
+
+## DLMtool 5.2.2
+
+### Fixes
+- fix issue with hyperstability/depletion for future projections
+- `MSE@OM` has been updated to only include historical conditions.
+- Fix issue with `Converge` in 5.2.1
+- improvement to `XL2Data` to read files from other than working directory
+- more flexibility to `summary(Data)` 
+
+## DLMtool 5.2.1
+
+### Minor fixes
+- Fix issues with `PM` functions when `MSE@nMPs == 1`
+- Fix minor issue with cpp code to pass CRAN checks
+
+## DLMtool 5.2
+
+### New Features
+- option for variable management interval by MP in `runMSE`. `OM@interval` can now be a vector of length `nMPs`, to specify different
+management intervals for different MPs. For example, with `OM@interval=c(1,5)` and `runMSE(OM, MPs=c('AvC', 'BK')), `AvC` is applied every
+year and `BK` is applied every 5 years. `OM@interval` is recycled if not the same length as number of MPs. 
+
+### New Functions
+- `makeMeanMP` has been added to generate a MP that averages output from a list of other MPs.
+- `Turing` has been added to compare simulated data from an OM to the real data in the fishery Data object.
+- `LH2OM` and  `predictLH` have been added to predict correlated life-history parameters from FishBase using FishLife model.
+
+
+### Updated Functions
+- improved convergence diagnostic with updated `Converge` function
+- `Replace` function has been updated to replace directly from individual Stock, Fleet, Obs, and Imp objects instead of from only OM objects
+- The plots produced by `summary(Data)` function have been improved 
+- `makePerf` has been replaced with `tinyErr` function with options to remove process error, observation error, and gradients
+- additional MPs have been added: effort-based LBSPR and variants of existing MPAs
+- `PM` (Performance Metric) methods have been updated and described in the user guide 
+- MSE trade-off functions have been updated: `Trade_Plot`, `Tplot`, `Tplot2`, and `Tplot3`
+- `Fease` has been simplified and updated. Fease object has now been removed
+
+
+### Improved Documentation 
+- similar functions and MPs have been combined into single help files
+- all MPs now have an argument `plot` and examples in the online documentation
+- documentation for MPs has been improved, including equations for calculations of TAC, TAE and size-limits
+- custom parameters (`OM@cpars`) have been updated and now have better documentation 
+- the user guide `userguide()` has been updated and additional chapters added on new features
+
+### Minor Fixes and Edits
+- modified catch-at-length generation code to deal with dome-shaped selectivity better
+- fixed issue where OMs were not reproducible if some slots had no variability
+- new slots have been added to the `Data` object: `Common_Name`, `Species`, `Region`, and for data-rich MPs in MSEtool: `sigmaR` (recruitment error)
+- iSCAM and SS2DLM functions have been moved from DLMtool to MSEtool
+- added LHdatabase from FishLife and functions to predict life-history parameters 
+
 
 ## DLMtool 5.1.3 
 - fix Replace function for new OM slots

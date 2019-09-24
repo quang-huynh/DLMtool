@@ -3,6 +3,7 @@ Thumbs.db
 ehthumbs.db
 # Folder config file
 Desktop.ini
+*.ini
 # Recycle Bin used on file shares
 $RECYCLE.BIN/
 # Windows Installer files
@@ -53,3 +54,5 @@ DLMtool.Rproj
 *.Rproj
 src-i386
 src-x64
+temp
+test-out.xml

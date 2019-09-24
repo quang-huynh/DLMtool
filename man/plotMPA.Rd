@@ -4,15 +4,18 @@
 \alias{plotMPA}
 \title{Plot the Historical Spatial Closures}
 \usage{
-plotMPA(OM)
+plotMPA(OM, sim = NA)
 }
 \arguments{
 \item{OM}{An object of class OM}
+
+\item{sim}{Optional. Simulation number to plot}
 }
 \description{
 Plot the Historical Spatial Closures
 }
 \examples{
+\dontrun{
 OM <- new("OM", Albacore, Generic_Fleet, Perfect_Info, Perfect_Imp)
 
 ## 50\% of Area 1 was closed 30 years ago 
@@ -24,6 +27,7 @@ cl3 <- c(OM@nyears-1, 0, 1)
 
 OM@MPA <- matrix(c(cl1, cl2, cl3), ncol=3, byrow=TRUE)
 plotMPA(OM)
+}
 
 }
 \author{

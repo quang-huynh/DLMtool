@@ -4,13 +4,14 @@
 \alias{Pplot2}
 \title{A projection by projection plot of F/FMSY, B/BMSY, B/B0, and yield}
 \usage{
-Pplot2(MSEobj, YVar = c("SSB_SSBMSY", "F_FMSY"), MPs = NA, sims = NULL,
-  traj = c("all", "quant"), quants = c(0.1, 0.9), incquant = TRUE,
-  quantcol = "lightgray", RefYield = c("lto", "curr"), LastYr = TRUE,
-  maxMP = 6, alpha = 60, cex.axis = 1.35, cex.lab = 1.4, YLab = NULL,
-  incMP = TRUE, MPcex = 1.4, incLeg = TRUE, cex.leg = 1.5,
-  legPos = "topleft", yline = NULL, parOR = FALSE, xaxis = TRUE,
-  yaxis = TRUE, oneIt = TRUE, ...)
+Pplot2(MSEobj, YVar = c("F_FMSY", "SSB_SSBMSY"), MPs = NA,
+  sims = NULL, traj = c("all", "quant", "both"), quants = c(0.1,
+  0.9), incquant = TRUE, quantcol = "lightgray", RefYield = c("lto",
+  "curr"), LastYr = TRUE, ref.lines = c(0.5, 1, 1.5), maxMP = 6,
+  alpha = 60, cex.axis = 1, cex.lab = 1, YLab = NULL,
+  incMP = TRUE, MPcex = 1, MPcol = "black", incLeg = TRUE,
+  cex.leg = 1.5, legPos = "topleft", yline = NULL, xline = NULL,
+  parOR = FALSE, xaxis = TRUE, yaxis = TRUE, oneIt = TRUE, ...)
 }
 \arguments{
 \item{MSEobj}{An object of class MSE}
@@ -22,8 +23,8 @@ Pplot2(MSEobj, YVar = c("SSB_SSBMSY", "F_FMSY"), MPs = NA, sims = NULL,
 
 \item{sims}{Optional subset by simulation}
 
-\item{traj}{Plot all projections (\code{all}) or only quantiles
-(\code{quant})}
+\item{traj}{Plot all projections (\code{all}), only quantiles
+(\code{quant}), or both projections and median (\code{both})}
 
 \item{quants}{Numeric vector of length 2 specifying the quantiles (e.g.,
 10th and 90th. Median is always included)}
@@ -37,6 +38,8 @@ or last historical year (\code{curr})}
 
 \item{LastYr}{Logical. Include the last historical year in the yield
 projections?}
+
+\item{ref.lines}{Numeric vector of y-values for horizontal reference lines. Set to NULL to remove lines.}
 
 \item{maxMP}{Maximum number of MPs to plot}
 
@@ -52,13 +55,17 @@ projections?}
 
 \item{MPcex}{Size of MP label}
 
+\item{MPcol}{Optional character vector of colors for MP labels}
+
 \item{incLeg}{Logical. Include a legend?}
 
 \item{cex.leg}{Size of legend text}
 
 \item{legPos}{Legend position}
 
-\item{yline}{Optional horizontal line}
+\item{yline}{Optional horizontal lines}
+
+\item{xline}{Optional vertical lines}
 
 \item{parOR}{Logical to over-ride the par parameters}
 

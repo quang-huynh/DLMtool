@@ -5,7 +5,7 @@
 \title{Create a standard DFO MSE report}
 \usage{
 DFO_report(MSEobj, output_file = NA, author = "Author not specified",
-  title = NA)
+  title = NA, maxMPs = 15)
 }
 \arguments{
 \item{MSEobj}{An object of class MSE}
@@ -15,6 +15,8 @@ DFO_report(MSEobj, output_file = NA, author = "Author not specified",
 \item{author}{The person who made this report}
 
 \item{title}{The title of the report}
+
+\item{maxMPs}{Maximum number of MPs to plot}
 }
 \description{
 Provides performacne plots typical in the assessment of Canadian fish stocks.

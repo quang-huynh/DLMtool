@@ -7,6 +7,7 @@
 #' DLMtool package.
 #' 
 #' @param classy A class of object (character string, e.g. 'Fleet')
+#' @param builtin Logical. Only return Objects of class 'classy' from DLMtool & DLMextra packages?
 #' @examples
 #' avail("OM")
 #' @author T. Carruthers
@@ -16,7 +17,7 @@
 #' Fleets <- avail("Fleet")
 #' MPs <- avail("MP")
 #' @export 
-avail <- function(classy) {
+avail <- function(classy, builtin=FALSE) {
   temp <- try(class(classy), silent=TRUE)
   if (class(temp) == "try-error") classy <- deparse(substitute(classy))
   if (temp == "function") classy <- deparse(substitute(classy))
@@ -29,8 +30,13 @@ avail <- function(classy) {
     return(temp)
     
   } else {
-    temp <- c(ls("package:DLMtool")[vapply(ls("package:DLMtool"), getclass, logical(1), classy = classy)], 
-              ls(envir = .GlobalEnv)[vapply(ls(envir = .GlobalEnv), getclass, logical(1), classy = classy)])
+    if (builtin) {
+      temp <- c(ls("package:DLMtool")[vapply(ls("package:DLMtool"), getclass, logical(1), classy = classy)])
+    } else {
+      temp <- c(ls("package:DLMtool")[vapply(ls("package:DLMtool"), getclass, logical(1), classy = classy)], 
+                ls(envir = .GlobalEnv)[vapply(ls(envir = .GlobalEnv), getclass, logical(1), classy = classy)])
+    }
+    
     pkgs <- search()
     if ("package:DLMextra" %in% pkgs) {
       temp_extra <- ls("package:DLMextra")[vapply(ls("package:DLMextra"), getclass, logical(1), classy = classy)]
@@ -72,26 +78,108 @@ DLMDataDir <- function(stock = NA) {
 #'
 #' Downloads the DLMextra package from GitHub 
 #' @param silent Logical. Should messages to printed?
+#' @param force Logical. For install from github if package is up-to-date?
 #' @export
 #'
-#' @importFrom devtools install_github
-DLMextra <- function(silent=FALSE) {
+DLMextra <- function(silent=FALSE, force=FALSE) {
   if (!requireNamespace("devtools", quietly = TRUE)) {
     stop("devtools is needed for this function to work. Please install it.",
          call. = FALSE)
   }
   
   if (!silent) message("\nDownloading 'DLMextra' from GitHub")
-  tt <- devtools::install_github("DLMtool/DLMextra", quiet=TRUE)
-  if (tt) {
-    if (!silent) message("Use 'library(DLMextra)' to load additional data into workspace")
-  } else {
-    if (!silent) message("Package 'DLMextra' already up to date\n Use 'library(DLMextra)' to load additional data into workspace")
-  }
-  
+   devtools::install_github("DLMtool/DLMextra", quiet=FALSE, force=force)
+  if (!silent) message("Use 'library(DLMextra)' to load additional data into workspace")
+  # if (tt) {
+  #  
+  # } else {
+  #   if (!silent) message("Package 'DLMextra' already up to date\n Use 'library(DLMextra)' to load additional data into workspace")
+  # }
+  # 
 }
 
+
+#' @rdname tinyErr
+#' @export
+setGeneric("tinyErr", function(x, ...) standardGeneric("tinyErr")) 
+
+#' @name tinyErr
+#' @aliases tinyErr,OM-method
+#' @title Remove observation, implementation, and process error
+#' 
+#' @description Takes an existing OM object and converts it to one without any observation
+#' error, implementation error, very little process error, and/or gradients in
+#' life history parameters and catchability.  
+#' 
+#' @details Useful for debugging and testing that MPs perform as expected under perfect conditions.
+#'
+#' @param x An object of class `OM` 
+#' @param ... Arguments to generic function
+#' @param obs Logical. Remove observation error? `Obs` is replaced with `Perfect_Info`
+#' @param imp Logical. Remove implementation error? `Imp` is replaced with `Perfect_Imp`
+#' @param proc Logical. Remove process error? All `sd` and `cv` slots in `Stock` 
+#' and `Fleet` object are set to 0.
+#' @param grad Logical. Remove gradients? All `grad` slots in `Stock` and 
+#' `qinc` in `Fleet` are set to 0.
+#' @param silent Logical. Display messages?
+#' 
+#' @templateVar url modifying-the-om
+#' @templateVar ref the-tinyerr-function
+#' @template userguide_link
+#' 
+#' @return An updated object of class `OM`
+#' @export
+#'
+#' @examples
+#' OM_noErr <- tinyErr(DLMtool::testOM)
+setMethod("tinyErr", signature(x = "OM"),
+          function(x, obs=TRUE, imp=TRUE, proc=TRUE, grad=TRUE, silent=FALSE) {
+            OM <- x
+            if (length(OM@cpars)>0) 
+              warning("Note that this function doesn't apply to parameters in cpars.\n Must be removed manually e.g `OM@cpars$Perr_y <- NULL`")
+            
+            if (!inherits(OM, 'OM')) stop("Object must be class `OM`", call.=FALSE)
+            OMperf <- new("OM", DLMtool::Albacore, DLMtool::Generic_Fleet,
+                          DLMtool::Perfect_Info, DLMtool::Perfect_Imp)
+            OMout <- OM 
+            
+            if (obs) {
+              if (!silent) message("Removing all Observation Error")
+              OMout <- Replace(OMout, OMperf, "Obs", silent = TRUE)
+            }
+            if (imp) {
+              if (!silent) message("Removing all Implementation Error")
+              OMout <- Replace(OMout, OMperf, "Imp", silent = TRUE)
+            }
+            if (proc) {
+              if (!silent) message("Removing all Process Error")
+              vars <- c("cv", "sd", "Perr", "AC")
+              nms <- c(slotNames('Stock'), slotNames('Fleet'))
+              ind <- unique(grep(paste(vars, collapse = "|"), nms, value = FALSE))
+              for (X in seq_along(ind)) {
+                n <- length(slot(OMout, nms[ind[X]]))
+                if (n == 0) n <- 2
+                slot(OMout, nms[ind[X]]) <- rep(0, n)
+              }
+            }
+            if (grad) {
+              if (!silent)  message("Removing all Gradients")
+              vars <- c("grad", "inc")
+              nms <- c(slotNames('Stock'), slotNames('Fleet'))
+              ind <- unique(grep(paste(vars, collapse = "|"), nms, value = FALSE))
+              for (X in seq_along(ind)) {
+                n <- length(slot(OMout, nms[ind[X]]))
+                if (n == 0) n <- 2
+                slot(OMout, nms[ind[X]]) <- rep(0, n)
+              }
+            }
+            OMout
+          })
+
 #' Convert a OM object to one without observation or process error
+#' 
+#' Note: This function has been replaced with `tinyErr` and will soon be removed from
+#' the package
 #' 
 #' Takes an existing OM object and converts it to one without any observation
 #' error, and very little process error.  Used for debugging and testing that
@@ -103,10 +191,9 @@ DLMextra <- function(silent=FALSE) {
 #' changed (not tested perfectly so watch out!)
 #' @return A new \code{OM} object
 #' @author A. Hordyk
-#' @examples 
-#' OM_noerror <- makePerf(DLMtool::testOM)
 #' @export 
 makePerf <- function(OMin, except = NULL) {
+  .Deprecated("tinyErr")
   nms <- slotNames(OMin)
   # exceptions
   if (is.null(except)) except <- "EVERYTHING"
@@ -147,36 +234,70 @@ makePerf <- function(OMin, except = NULL) {
 
 #' Management Procedure Type
 #'
-#' @param MPs A list of MP names  
+#' @param MPs A vector of MP names. If none are provided function is run on all available MPs
 #'
-#' @return A data.frame with MP names and management type
+#' @return A data.frame with MP names, management type (e.g "Input", "Output") and management recommendations returned by the MP
+#' (e.g, TAC (total allowable catch), TAE (total allowable effort), SL (size-selectivity), and/or or Spatial)
 #' @export
 #' @seealso \link{Required}
 #' @examples 
 #' MPtype(c("AvC", "curE", "matlenlim", "MRreal", "FMSYref"))
 #' 
 MPtype <- function(MPs=NA) {
+  if(class(MPs) == "MP") stop("MPs must be characters")
   if (any(is.na(MPs))) MPs <- avail("MP")
+  if (class(MPs) != 'character') stop("MPs must be characters")
   
   Data <- DLMtool::SimulatedData
+  dims <- dim(Data@Ind)
+  # Data@RInd <- array(Data@Ind, dim=c(dims[1],3,dims[2]))
   
   runMPs <- applyMP(Data, MPs, reps = 2, nsims=1, silent=TRUE)
   recs <- runMPs[[1]]
   
   type <- rep("NA", length(MPs))
+  rec <- rep("", length(MPs))
+  rectypes <- c("TAE", "Spatial", "SL")
   for (mm in seq_along(recs)) {
+    Effort <- Spatial <- Selectivity <- FALSE
     output <- length(recs[[mm]]$TAC) > 0 
     names <- names(recs[[mm]])
     names <- names[!names %in% c("TAC", "Spatial")]
     input <- sum(unlist(lapply(Map(function(x) recs[[mm]][[x]], names), length))) > 0
     if (all(!is.na(recs[[mm]]$Spatial))) input <- TRUE
-    if (output) type[mm] <- "Output"
-    if (input) type[mm] <- "Input"
-    if (input & output) type[mm] <- "Mixed"
+    if (output) {
+      type[mm] <- "Output"
+      thisrec <- "TAC"
+    }
+    if (input) {
+      # what recommentations have been made?
+      if (any(is.finite(recs[[mm]]$Effort))) Effort <- TRUE
+      if (any(is.finite(recs[[mm]]$Spatial))) Spatial <- TRUE
+      if (any(is.finite(recs[[mm]]$LR5)) | any(is.finite(recs[[mm]]$LFR)) | any(is.finite(recs[[mm]]$HS)) |
+          any(is.finite(recs[[mm]]$Rmaxlen)) | any(is.finite(recs[[mm]]$L5)) | any(is.finite(recs[[mm]]$LFS)) |
+          any(is.finite(recs[[mm]]$Vmaxlen))) Selectivity <- TRUE
+      
+      dorecs <- rectypes[c(Effort, Spatial, Selectivity)]
+      thisrec <- dorecs
+      type[mm] <- "Input"
+      
+    }
+    if (input & output) {
+      type[mm] <- "Mixed"
+      thisrec <- c("TAC", thisrec)
+    }
+    if (length(thisrec)>1)  {
+      rec[mm] <- paste(thisrec, collapse=", ")
+    } else {
+      rec[mm] <- thisrec
+    }
   }
   type[grep("ref", MPs)] <- "Reference"
-  df <- data.frame(MP=MPs, Type=type, stringsAsFactors = FALSE)
-  df[order(df$Type),]
+  
+  df <- data.frame(MP=MPs, Type=type, Recs=rec, stringsAsFactors = FALSE)
+  df <- df[order(df$Type),]
+  rownames(df) <- 1:nrow(df)
+  df
   
 }
 
@@ -188,6 +309,7 @@ MPtype <- function(MPs=NA) {
 #' @param x A numeric value.
 #' @return TRUE or FALSE 
 #' @author T. Carruthers
+#' @keywords internal
 #' @export
 NAor0 <- function(x) {
   if (length(x) == 0) 
@@ -260,41 +382,188 @@ plotFun <- function(class = c("MSE", "Data"), msg = TRUE) {
 #' function text for slots in the Data object
 #' 
 #' @param funcs A character vector of management procedures
+#' @param noCV Logical. Should the CV slots be left out? 
 #' @author T. Carruthers
-#' @return A matrix of MPs and their required data in terms of Data slotnames
+#' @return A matrix of MPs and their required data in terms of `slotnames('Data')`,
+#' and broad Data classes for each MP
 #' @examples 
 #' Required(c("DCAC", "AvC"))
 #' Required() # For all MPs
 #' @seealso \link{Can} \link{Cant} \link{Needed} \link{MPtype} \linkS4class{Data}
 #' @export 
-Required <- function(funcs = NA) {
-#  if (is.na(funcs[1])) 
-#    funcs <- c(avail("Output"), avail("Input"))
-#  slots <- slotNames("Data")
-#  slotnams <- paste("Data@", slotNames("Data"), sep = "")
-#  repp <- rep("", length(funcs))
-#  
-#  for (i in 1:length(funcs)) {
-#    temp <- format(match.fun(funcs[i]))
-#    temp <- paste(temp[1:(length(temp))], collapse = " ")
-#    rec <- ""
-#    for (j in 1:length(slotnams)) if (grepl(slotnams[j], temp)) 
-#      rec <- c(rec, slots[j])
-#    if (length(rec) > 1) 
-#      repp[i] <- paste(rec[2:length(rec)], collapse = ", ")
-#  }
-#  cbind(funcs, repp, deparse.level = 0)
-#  
+Required <- function(funcs = NA, noCV=FALSE) {
+  
+  if (class(funcs) != 'logical' & class(funcs) != "character") stop("first argument must be character with MP name")
+  
   if (all(is.na(funcs))) funcs <- avail("MP")
-  temp <- lapply(funcs, function(x) paste(format(match.fun(x)), collapse = " "))
+  for (x in 1:length(funcs)) {
+    tt <- try(get(funcs[x]))
+    if (class(tt) != "MP") stop(funcs[x], " is not class 'MP'")
+  } 
+  
+  ReqData <- DLMtool::ReqData
+  builtin <- funcs[funcs %in% ReqData$MP]
+  custom <- funcs[!funcs %in% ReqData$MP]
+  
+  df <- ReqData[match(builtin, ReqData$MP),]
+  
+  funcs1 <- custom
+  
+  temp <- lapply(funcs1, function(x) paste(format(match.fun(x)), collapse = " "))
   repp <- vapply(temp, match_slots, character(1))
   #repp[!nzchar(repp)] <- "No data needed for this MP."
-  matrix(c(funcs, repp), ncol = 2)
+  
+  df2 <- data.frame(MP=funcs1, Data=repp, stringsAsFactors = FALSE)
+  
+  dfout <- rbind(df, df2)
+
+  if (noCV) {
+    for (rr in 1:nrow(dfout)) {
+      tt <- unlist(strsplit(dfout$Data[rr], ","))
+      tt <- tt[!grepl("CV_", tt)]
+      tt <- sort(trimws(sort(tt)))
+      dfout$Data[rr] <- paste(tt, collapse = ", ")
+    }
+  }
+  
+  # Add Data Classes 
+  dfout$DataClass <- NULL
+  for (i in 1:nrow(dfout)) {
+    DataClass <- NULL
+    
+    # Catch Data 
+    if (grepl("LHYear", dfout$Data[i]) & grepl("Cat", dfout$Data[i])) {
+      DataClass <- c(DataClass, 'Recent Catches')
+    }
+    if (!grepl("LHYear", dfout$Data[i]) & grepl("Cat", dfout$Data[i])) {
+      DataClass <- c(DataClass, 'Historical Catches')
+    }
+    if (grepl("AvC", dfout$Data[i])) {
+      DataClass <- c(DataClass, 'Average Catch')
+    }
+    
+    # Index 
+    if (grepl("Ind", dfout$Data[i])) {
+      DataClass <- c(DataClass, 'Index of Abundance')
+    }
+    
+    # Rec
+    if (grepl("Rec", dfout$Data[i])) {
+      DataClass <- c(DataClass, 'Recruitment Index')
+    }
+    
+    # Rec
+    if (grepl("Rec", dfout$Data[i])) {
+      DataClass <- c(DataClass, 'Recruitment Index')
+    }
+    
+    if (grepl("Abun", dfout$Data[i]) | grepl("SpAbun", dfout$Data[i])) {
+      DataClass <- c(DataClass, 'Current Abundance')
+    }
+    
+    if (grepl("Dep", dfout$Data[i]) | grepl("Dt", dfout$Data[i])) {
+      DataClass <- c(DataClass, 'Current Depletion')
+    }
+    
+    if (grepl("Mort", dfout$Data[i]) | grepl("MaxAge", dfout$Data[i])) {
+      DataClass <- c(DataClass, 'Natural Mortality')
+    }
+    
+    
+    if (grepl("FMSY_M", dfout$Data[i]) | grepl("BMSY_B0", dfout$Data[i])) {
+      DataClass <- c(DataClass, 'Reference Ratios')
+    }
+    
+    if (grepl("L50", dfout$Data[i]) | grepl("L95", dfout$Data[i])) {
+      DataClass <- c(DataClass, 'Maturity')
+    }
+    
+    if (grepl("ML", dfout$Data[i]) | grepl("Lbar", dfout$Data[i])) {
+      DataClass <- c(DataClass, 'Mean Length')
+    }
+    
+    if (grepl("Lc", dfout$Data[i]) | grepl("LFC", dfout$Data[i]) | grepl("LFS", dfout$Data[i])) {
+      DataClass <- c(DataClass, 'Selectivity')
+    }
+    
+    if (grepl("CAA", dfout$Data[i])) {
+      DataClass <- c(DataClass, 'Age Composition')
+    }
+    
+    if (grepl("vbK", dfout$Data[i]) | grepl("vbLinf", dfout$Data[i]) | 
+        grepl("vbt0", dfout$Data[i]) | grepl("LenCV", dfout$Data[i]) | 
+        grepl("wla", dfout$Data[i]) | grepl("wlb", dfout$Data[i])) {
+      DataClass <- c(DataClass, 'Growth Parameters')
+    }
+    
+    if (grepl("steep", dfout$Data[i]) | grepl("sigmaR", dfout$Data[i])) {
+      DataClass <- c(DataClass, 'Stock-Recruitment')
+    } 
+    
+    if (grepl("CAL_bins", dfout$Data[i]) | grepl("CAL", dfout$Data[i])) {
+      DataClass <- c(DataClass, 'Length Composition')
+    }    
+    
+    if (grepl("Cref", dfout$Data[i]) | grepl("Iref", dfout$Data[i]) | 
+        grepl("Bref", dfout$Data[i])) {
+      DataClass <- c(DataClass, 'Reference Levels')
+    } 
+    
+    if (grepl("MPrec", dfout$Data[i]) | grepl("MPeff", dfout$Data[i])) {
+      DataClass <- c(DataClass, 'Recent Management')
+    }
+    
+    DataClass <- sort(DataClass)
+    dfout$DataClass[i] <- paste0(DataClass, collapse=", ")
+    
+  }
+  
+  as.matrix(dfout)
 }
 
 
-# Required("DCAC")
-# Required2("DCAC")
+
+#' Get help topic URL
+#'
+#' @param topic Name of the functions
+#' @param url URL for the help documentation
+#' @param nameonly Logical. Help file name only?
+#'
+#' @return file path to help file
+#' @export
+#'
+#' @keywords internal
+MPurl <- function(topic, url='https://dlmtool.github.io/DLMtool/reference/',
+                    nameonly=FALSE) {
+  
+  paths <- file.path(.libPaths()[1], "DLMtool")
+  
+  res <- character()
+  for (p in paths) {
+    if (file.exists(f <- file.path(p, "help", "aliases.rds"))) 
+      al <- readRDS(f)
+    else if (file.exists(f <- file.path(p, "help", "AnIndex"))) {
+      foo <- scan(f, what = list(a = "", b = ""), sep = "\t", 
+                  quote = "", na.strings = "", quiet = TRUE)
+      al <- structure(foo$b, names = foo$a)
+    }
+    else next
+    f <- al[topic]
+    if (is.na(f)) 
+      next
+    res <- c(res, file.path(p, "help", f))
+   
+  }
+  if (length(res)<1) return(NA)
+  
+  if(nameonly) {
+    return(basename(res))
+  } else{
+    return(paste0(url, basename(res), ".html"))
+  }
+  
+}
+
 
 #' Setup parallel processing
 #'
@@ -302,18 +571,19 @@ Required <- function(funcs = NA) {
 #'
 #' @param cpus number of CPUs 
 #' @param ... other arguments passed to 'snowfall::sfInit'
-#' @importFrom snowfall sfInit sfExportAll sfIsRunning sfExport sfSapply sfLibrary
-#' @importFrom parallel detectCores
 #' @examples
 #' \dontrun{
-#' setup() # set-up 4 processors
+#' setup() # set-up half the available processors
 #' setup(6) # set-up 6 processors
 #' }
 #' @export 
-setup <- function(cpus=min(parallel::detectCores(),4), ...) {
+setup <- function(cpus=parallel::detectCores()*0.5, ...) {
   if(snowfall::sfIsRunning()) snowfall::sfStop()
   snowfall::sfInit(parallel=TRUE,cpus=cpus, ...)
-  sfLibrary("DLMtool", character.only = TRUE)
+  sfLibrary("DLMtool", character.only = TRUE, verbose=FALSE)
+  pkgs <- search()
+  if ("package:MSEtool" %in% pkgs) sfLibrary("MSEtool", character.only = TRUE, verbose=FALSE)
+  
 }
 
 
@@ -323,7 +593,6 @@ setup <- function(cpus=min(parallel::detectCores(),4), ...) {
 #' Opens the DLMtool User Guide website (requires internet connection)
 #' 
 #' @export
-#' @importFrom utils browseURL
 #' @examples
 #' \dontrun{
 #' userguide()
@@ -332,6 +601,17 @@ userguide <- function() {
   utils::browseURL("https://dlmtool.github.io/DLMtool/userguide/introduction.html")
 }
 
+#' Opens the DLMtool Cheat-Sheets (requires internet connection)
+#' 
+#' @export
+#' @examples
+#' \dontrun{
+#' cheatsheets()
+#' }
+cheatsheets <- function() {
+  # utils::browseURL("https://dlmtool.github.io/DLMtool/cheat_sheets/DLMtool_CheatSheets.pdf")
+  utils::browseURL("https://dlmtool.github.io/DLMtool/cheat_sheets/CheatSheets.html")
+}
 
 RepmissingVal <- function(object, name, vals=NA) {
   miss <- FALSE
@@ -345,17 +625,11 @@ RepmissingVal <- function(object, name, vals=NA) {
   return(object)
 }
 
-#' Update an MSE object with new slots
-#' 
-#' Updates an existing MSE object (class MSE) from a previous version of the
-#' DLMtool to include the new slots.  The slots will be empty, but avoids the
-#' 'slot doesn't exist' error that sometimes occurs. Also works with Stock, Fleet,
-#' Obs, Imp, and Data objects. 
-#' 
-#' @param MSEobj A MSE object from a previous version of the DLMtool. 
-#' Also works with Stock, Fleet, Obs, Imp, and Data objects. 
-#' @return An object of class matching class(MSEobj)
-#' @author A. Hordyk
+#' @describeIn checkMSE Updates an existing MSE object (class MSE) from a previous version of the
+#' DLMtool to include slots new to the lastest version. Also works with Stock, 
+#' Fleet, Obs, Imp, and Data objects. The new slots will be empty, 
+#' but avoids the 'slot doesn't exist' error that sometimes occurs. 
+#' Returns an object of class matching class(MSEobj)
 #' @export 
 updateMSE <- function(MSEobj) {
   slots <- slotNames(MSEobj)
@@ -391,52 +665,57 @@ updateMSE <- function(MSEobj) {
 #' @param x vector of numeric values 
 #' @author T. Carruthers
 #' @return numeric
+#' @keywords internal
 #' @export
 cv <- function(x) sd(x)/mean(x)
 
 
-#' Get log normal standard deviation from transformed space mean and standard deviation 
+#' Get parameters of lognormal distribution from mean and standard deviation in normal
+#' space
 #' 
-#' @param m mean 
-#' @param sd standard deviation
+#' @param m mean in normal space 
+#' @param sd standard deviation in normal space
 #' @author T. Carruthers
 #' @return numeric
+#' @describeIn sdconv Returns sigma of lognormal distribution
+#' @keywords internal
 #' @export
 sdconv <- function(m, sd) (log(1 + ((sd^2)/(m^2))))^0.5
 
-#' Get log normal mean from transformed space mean and standard deviation
-#' 
-#' @param m mean 
-#' @param sd standard deviation
-#' @author T. Carruthers
-#' @return numeric
+
+#' @describeIn sdconv Returns mu of lognormal distribution
+#' @export
 mconv <- function(m, sd) log(m) - 0.5 * log(1 + ((sd^2)/(m^2)))
 
-#' Calculate alpha parameter for beta distribution from mean and standard deviation 
+#' Calculate parameters for beta distribution from mean and standard deviation in
+#' normal space
 #' 
 #' @param m mean 
 #' @param sd standard deviation
 #' @author T. Carruthers
 #' @return numeric
+#' @describeIn alphaconv Returns alpha of beta distribution
+#' @keywords internal
 #' @export
 alphaconv <- function(m, sd) m * (((m * (1 - m))/(sd^2)) - 1)
 
-#' Calculate beta parameter for beta distribution from mean and standard deviation 
-#' 
-#' @param m mean 
-#' @param sd standard deviation
-#' @author T. Carruthers
-#' @return numeric
+
+#' @describeIn alphaconv Returns beta of beta distribution
 #' @export 
 betaconv <- function(m, sd) (1 - m) * (((m * (1 - m))/(sd^2)) - 1)
 
-#'  Generate log-normally distributed random numbers 
+#' Lognormal distribution for DLMtool 
+#' 
+#' Variant of rlnorm which returns the mean when reps = 1.
 #' 
 #' @param reps number of random numbers 
 #' @param mu mean 
 #' @param cv coefficient of variation
+#' @param x vector 
 #' @author T. Carruthers
 #' @return numeric
+#' @describeIn trlnorm Generate log-normally distributed random numbers
+#' @keywords internal 
 #' @export 
 trlnorm <- function(reps, mu, cv) {
   if (all(is.na(mu))) return(rep(NA, reps))
@@ -446,13 +725,8 @@ trlnorm <- function(reps, mu, cv) {
 }
 
 
-#'  Calculate density of log-normally distributed random numbers 
-#' 
-#' @param x vector 
-#' @param mu mean 
-#' @param cv coefficient of variation
-#' @author T. Carruthers
-#' @return numeric
+
+#' @describeIn trlnorm Calculate density of log-normally distributed random numbers 
 #' @export 
 tdlnorm <- function(x, mu, cv) dlnorm(x, mconv(mu, mu * cv), sdconv(mu, mu * cv))
 
@@ -476,37 +750,47 @@ tdlnorm <- function(x, mu, cv) dlnorm(x, mconv(mu, mu * cv), sdconv(mu, mu * cv)
 #' @export 
 ML2D <- function(OM, ML, nsim = 100, ploty = T, Dlim = c(0.05, 0.6)) {
   
+  nsim2<-nsim*10
   maxage <- OM@maxage
-  M <- runif(nsim, OM@M[1], OM@M[2])  # Natural mortality rate
-  h <- runif(nsim, OM@h[1], OM@h[2])  # Steepness
-  Linf <- runif(nsim, OM@Linf[1], OM@Linf[2])  # Maximum length
-  K <- runif(nsim, OM@K[1], OM@K[2])  # Maximum growth rate
-  t0 <- runif(nsim, OM@t0[1], OM@t0[2])  # Theorectical length at age zero
+  M <- runif(nsim2, OM@M[1], OM@M[2])  # Natural mortality rate
+  h <- runif(nsim2, OM@h[1], OM@h[2])  # Steepness
+  Linf <- runif(nsim2, OM@Linf[1], OM@Linf[2])  # Maximum length
+  K <- runif(nsim2, OM@K[1], OM@K[2])  # Maximum growth rate
+  t0 <- runif(nsim2, OM@t0[1], OM@t0[2])  # Theorectical length at age zero
   
   if (OM@isRel == "0" | OM@isRel == "FALSE" | OM@isRel == FALSE) {
     if (max(OM@LFS) > 0) {
-      LFS <- runif(nsim, OM@LFS[1], OM@LFS[2])
+      LFS <- runif(nsim2*5, OM@LFS[1], OM@LFS[2])
     } else {
-      LFS <- runif(nsim, mean(OM@LFSLower), mean(OM@LFSUpper))
+      LFS <- runif(nsim2*5, mean(OM@LFSLower), mean(OM@LFSUpper))
     }
   } else {
     if (max(OM@LFS) > 0) {
-      LFS <- runif(nsim, OM@LFS[1], OM@LFS[2]) * mean(OM@L50)
+      LFS <- runif(nsim2*5, OM@LFS[1], OM@LFS[2]) * mean(OM@L50)
     } else {
-      LFS <- runif(nsim, mean(OM@LFSLower), mean(OM@LFSUpper)) * 
+      LFS <- runif(nsim2*5, mean(OM@LFSLower), mean(OM@LFSUpper)) * 
         mean(OM@L50)
     }
   }
+  LFS<-LFS[LFS<Linf][1:nsim2]
   AFS <- L2A(t0, Linf, K, LFS, maxage)
-  
-  L5 <- runif(nsim, OM@L5[1], OM@L5[2]) * mean(OM@L50)
+  AFS[AFS<1]<-1
+
+  if (OM@isRel == "0" | OM@isRel == "FALSE" | OM@isRel == FALSE) {
+    L5 <- runif(nsim2, OM@L5[1], OM@L5[2]) 
+  }else{
+    L5 <- runif(nsim2, OM@L5[1], OM@L5[2])* mean(OM@L50)
+  }
+   
   age05 <- L2A(t0, Linf, K, L5, maxage)
-  age05[age05<0] <- 0
+  age05[age05<0.5] <- 0.5
   
-  Vmaxage <- runif(nsim, OM@Vmaxlen[1], OM@Vmaxlen[2])  #runif(BT_fleet@Vmaxage[1],BT_fleet@Vmaxage[2]) # selectivity of oldest age class
+  Vmaxage <- runif(nsim2, OM@Vmaxlen[1], OM@Vmaxlen[2])  #runif(BT_fleet@Vmaxage[1],BT_fleet@Vmaxage[2]) # selectivity of oldest age class
   
-  LM <- runif(nsim, OM@L50[1], OM@L50[2])
+  LM <- runif(nsim2*5, OM@L50[1], OM@L50[2])
+  LM<-LM[LM<Linf][1:nsim2]
   AM <- L2A(t0, Linf, K, LM, maxage)
+  AM[AM<1]<-1
   
   # age at maturity
   a <- OM@a  # length-weight parameter a
@@ -514,37 +798,41 @@ ML2D <- function(OM, ML, nsim = 100, ploty = T, Dlim = c(0.05, 0.6)) {
   
   mod <- AFS  # the age at modal (or youngest max) selectivity
   
-  # deriv <- getDNvulnS(mod, age05, Vmaxage, maxage, nsim)  # The vulnerability schedule
+  # deriv <- getDNvulnS(mod, age05, Vmaxage, maxage, nsim2)  # The vulnerability schedule
   # vuln <- deriv[[1]]
   
   srs <- (maxage - AFS) / ((-log(Vmaxage,2))^0.5) # selectivity parameters are constant for all years
   sls <- (AFS - age05) /((-log(0.05,2))^0.5)
   
-  vuln <- t(sapply(1:nsim, getsel, lens=matrix(1:maxage, nrow=nsim, ncol=maxage, byrow=TRUE), 
+  vuln <- t(sapply(1:nsim2, getsel, lens=matrix(1:maxage, nrow=nsim2, ncol=maxage, byrow=TRUE), 
                    lfs=AFS, sls=sls, srs=srs))
   
-  Agearray <- array(rep(1:maxage, each = nsim), c(nsim, maxage))
+  Agearray <- array(rep(1:maxage, each = nsim2), c(nsim2, maxage))
   mat <- 1/(1 + exp((AM - (Agearray))/(AM * 0.1)))  # Maturity at age array
   
-  nyears <- 100
-  # bootfun<-function(dat,ind)mean(dat[ind]) MLo<-boot(MLt,bootfun,nsim)
+  nyears <- OM@nyears
+  # bootfun<-function(dat,ind)mean(dat[ind]) MLo<-boot(MLt,bootfun,nsim2)
   # ML<-MLo$t
-  out <- CSRA(M, h, Linf, K, t0, AM, a, b, vuln, mat, ML = rep(ML, nsim), 
+  out <- CSRA(M, h, Linf, K, t0, AM, a, b, vuln, mat, ML = rep(ML, nsim2), 
               NA, NA, maxage, nyears)
   cond <- out[, 1] > Dlim[1] & out[, 1] < Dlim[2] & out[, 2] < 2.5  # Stock levels are unlikely to be above 80% unfished, F is unlikely to be above 2.5
   
-  if (ploty & sum(cond) > 0) {
+  if (ploty & sum(cond) > 5) {
     par(mfrow = c(1, 2))
     plot(density(out[cond, 1], from = 0, adj = 0.4), main = "Depletion")
     plot(density(out[cond, 2], from = 0, adj = 0.4), main = "Fishing mortality rate")
-    OM@D <- quantile(out[cond, 1], c(0.05, 0.95))
   }
-  if (sum(cond) == 0) {
+  if (sum(cond) < 5) {
     message("All estimates of Depletion outside bounds of Dlim")
     message("Operating Model object not updated")
   }
-  if (!ploty) 
-    message("Operating Model object not updated")
+  
+  if(sum(cond)>nsim){
+      OM@cpars$D<-out[cond,1][1:nsim]
+  }
+  
+  if(sum(cond) > 5) OM@D <- quantile(out[cond, 1], c(0.05, 0.95))
+  
   OM
 }
 
@@ -580,6 +868,7 @@ ML2D <- function(OM, ML, nsim = 100, ploty = T, Dlim = c(0.05, 0.6)) {
 #' @param nyears Number of historical years of fishing
 #' @author T. Carruthers
 #' @export CSRA
+#' @keywords internal
 CSRA <- function(M, h, Linf, K, t0, AM, a, b, vuln, mat, ML, CAL, CAA, 
                  maxage, nyears) {
   nsim <- length(M)
@@ -638,7 +927,7 @@ CSRA <- function(M, h, Linf, K, t0, AM, a, b, vuln, mat, ML, CAL, CAA,
 #' @param opt Should the measure of fit be returned?
 #' @param meth Are we fitting to mean length or catch composition?
 #' @author T. Carruthers
-
+#' @keywords internal
 CSRAfunc <- function(lnF, Mc, hc, maxage, nyears, AFSc, AFCc, Linfc, Kc, 
                      t0c, AMc, ac, bc, vulnc, matc, MLc, CAL, CAA, opt = T, meth = "ML") {
   
@@ -693,7 +982,7 @@ CSRAfunc <- function(lnF, Mc, hc, maxage, nyears, AFSc, AFCc, Linfc, Kc,
 #' @param LFC A vector of length at first capture
 #' @param maxage Maximum age
 #' @author T. Carruthers
-
+#' @keywords internal
 getAFC <- function(t0c, Linfc, Kc, LFC, maxage) {
   nsim <- length(t0c)
   agev <- c(1e-04, 1:maxage)
@@ -718,17 +1007,23 @@ getAFC <- function(t0c, Linfc, Kc, LFC, maxage) {
 #' @param Kc Maximum growth rate
 #' @param Len Length
 #' @param maxage Maximum age
+#' @param ploty Should a plot be included
 #' @return An age (vector of ages, matrix of ages) corresponding with Len
 #' @author T. Carruthers
-L2A <- function(t0c, Linfc, Kc, Len, maxage) {
+#' @keywords internal
+L2A <- function(t0c, Linfc, Kc, Len, maxage, ploty=F) {
   nsim <- length(t0c)
   agev <- c(1e-04, 1:maxage)
   agearray <- matrix(rep(agev, each = nsim), nrow = nsim)
   Larray <- Linfc * (1 - exp(-Kc * (agearray - t0c)))
-  matplot(agev, t(Larray), type = "l")
-  abline(h = Len, col = "#ff000030", lwd = 2)
+  temp<-Len/Linfc
+  temp[temp<0.95]<-0.95
   age <- (log(1 - (Len/Linfc))/-Kc) + t0c
-  abline(v = age, col = "#0000ff30", lwd = 2)
+  if(ploty){
+    matplot(agev, t(Larray), type = "l")
+    abline(h = Len, col = "#ff000030", lwd = 2)
+    abline(v = age, col = "#0000ff30", lwd = 2)
+  }
   age
 }
 
@@ -739,7 +1034,13 @@ L2A <- function(t0c, Linfc, Kc, Len, maxage) {
 #' @param nsim Numeric. Number of simulations.
 #' @param thresh Recommended n cpus is what percent of the fastest time?
 #' @param plot Logical. Show the plot?
+#' @param msg Logical. Should messages be printed to console?
+#' @param maxn Optional. Maximum number of cpus. Used for demo purposes
 #'
+#' @templateVar url parallel-processing 
+#' @templateVar ref determining-optimal-number-of-processors
+#' @template userguide_link
+#' 
 #' @export
 #' @seealso \link{setup}
 #' @examples
@@ -747,27 +1048,37 @@ L2A <- function(t0c, Linfc, Kc, Len, maxage) {
 #' optCPU()
 #' }
 #' @author A. Hordyk
-optCPU <- function(nsim=96, thresh=5, plot=TRUE) {
-  cpus=1:parallel::detectCores()
+optCPU <- function(nsim=96, thresh=5, plot=TRUE, msg=TRUE, maxn=NULL) {
+  cpus <- 1:parallel::detectCores()
+  if (!is.null(maxn)) cpus <- 1:maxn
+  
   time <- NA
   OM <- DLMtool::testOM
   OM@nsim <- nsim
   for (n in cpus) {
-    message('Running MSE with ', nsim, ' simulations and ', n, ' of ', max(cpus), ' cpus')
+    if (msg) message('Running MSE with ', nsim, ' simulations and ', n, ' of ', max(cpus), ' cpus')
     if (n == 1) {
       snowfall::sfStop()
       st <- Sys.time()
       tt <- runMSE(OM, silent = TRUE)
       time[n] <- difftime(Sys.time(), st, units='secs')
     } else{
-      setup(cpus=n)
+      if (msg) {
+        setup(cpus=n)
+      } else {
+        sink('temp')
+        suppressMessages(setup(cpus=n))
+        sink()
+      }
       st <- Sys.time()
-      tt <- runMSE(OM, silent=TRUE, parallel=TRUE)
+      tt <- runMSE(OM, silent=TRUE, parallel=TRUE)  
+      
       time[n] <- difftime(Sys.time(), st, units='secs')
       
     }
   } 
   df <- data.frame(ncpu=cpus, time=time)
+  df$time <- round(df$time,2)
   rec <- min(which(time < min(time) * (1 + thresh/100)))
   if (plot) {
     plot(df, type='b', ylab="time (seconds)", xlab= "# cpus", bty="l", lwd=2)
@@ -776,6 +1087,13 @@ optCPU <- function(nsim=96, thresh=5, plot=TRUE) {
   return(df)
 }
 
-
+#' DLMenv blank environment
+#' 
+#' An environment allocated for MPs to print model output during the
+#' management strategy evaluation. Is blank at the beginning of each call to \code{runMSE}.
+#' 
+#' @seealso \link{runMSE}
+#' @export
+DLMenv <- new.env()
 
 
