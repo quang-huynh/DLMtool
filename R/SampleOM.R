@@ -124,7 +124,8 @@ SampleStockPars <- function(Stock, nsim=48, nyears=80, proyears=50, cpars=NULL, 
   } else {
     StockOut$hs <- hs
   }
-  if (any(StockOut$hs > 1 | StockOut$hs < 0.2)) stop("Steepness (OM@h) must be between 0.2 and 1", call.=FALSE)
+  if (all(StockOut$SRrel == 1) && any(StockOut$hs > 1 | StockOut$hs < 0.2)) stop("Steepness (OM@h) must be between 0.2 and 1 for Beverton-Holt stock recruitment.", call.=FALSE)
+  if (all(StockOut$SRrel == 2) && any(StockOut$hs < 0.2)) stop("Steepness (OM@h) must be greater than 0.2 for Ricker stock recruitment.", call.=FALSE)
   
   # == Recruitment Deviations ====
   if (exists("Perr", inherits = FALSE)) {
