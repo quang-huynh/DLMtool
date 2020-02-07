@@ -723,7 +723,8 @@ indfit <- function(sim.index,obs.ind, Year, plot=FALSE, lcex=0.8){
     mtext("Index",2,outer=T,line=0)
   }
   
-  opt<-optimize(getbeta,x=exp(sim.index),y=exp(obs.ind),interval=c(0.1,10))
+  #opt<-optimize(getbeta,x=exp(sim.index),y=exp(obs.ind),interval=c(0.1,10))
+  opt <- list(minimum = 1)
   res<-exp(obs.ind)-(exp(sim.index)^opt$minimum)
   ac<-acf(res,plot=F)$acf[2,1,1] # lag-1 autocorrelation
   
